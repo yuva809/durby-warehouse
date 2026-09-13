@@ -13,6 +13,8 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { LogoMark } from './LogoMark'
+import { useWarehouseStore } from '../../store/useWarehouseStore'
+import { branchIdForRole } from '../../lib/viewRoles'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -26,7 +28,15 @@ const NAV = [
   { to: '/roadmap', label: 'Roadmap', icon: Map },
 ]
 
+// A branch's job is request -> track -> receive, not inventory management —
+// keep their nav down to what that actually needs.
+const BRANCH_NAV_PATHS = new Set(['/', '/requests', '/roadmap'])
+
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const view = useWarehouseStore((s) => s.view)
+  const isBranch = !!branchIdForRole(view)
+  const navItems = isBranch ? NAV.filter((item) => BRANCH_NAV_PATHS.has(item.to)) : NAV
+
   return (
     <>
       {open && (
@@ -63,7 +73,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
-          {NAV.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

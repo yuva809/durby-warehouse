@@ -5,9 +5,11 @@ import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { RequestStatusBadge } from '../ui/StatusBadge'
+import { Timeline } from '../ui/Timeline'
 import { useWarehouseStore } from '../../store/useWarehouseStore'
 import { requestService } from '../../services/requestService'
 import { cn, formatDateTime } from '../../lib/utils'
+import { computeRequestTimeline } from '../../lib/requestTimeline'
 import { WAREHOUSE_ID } from '../../types'
 
 export function RequestDrawer({
@@ -140,6 +142,11 @@ export function RequestDrawer({
           <RequestStatusBadge status={request.status} />
         </div>
 
+        <div className="mb-6">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-400">Timeline</div>
+          <Timeline steps={computeRequestTimeline(request, linkedTransfer)} />
+        </div>
+
         <div className="space-y-3">
           {rows.map(({ item, product, available, approved, sufficient }) => (
             <div key={item.productId} className="rounded-xl ring-1 ring-ink-200/70 p-3.5">
@@ -154,11 +161,13 @@ export function RequestDrawer({
                     </Badge>
                   ))}
               </div>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <div className="text-ink-400">Warehouse</div>
-                  <div className="font-semibold text-ink-700 tabular-nums">{available} {product.unit}</div>
-                </div>
+              <div className={cn('mt-2 grid gap-2 text-xs', isManager ? 'grid-cols-3' : 'grid-cols-2')}>
+                {isManager && (
+                  <div>
+                    <div className="text-ink-400">Warehouse</div>
+                    <div className="font-semibold text-ink-700 tabular-nums">{available} {product.unit}</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-ink-400">Requested</div>
                   <div className="font-semibold text-ink-700 tabular-nums">{item.requestedQty} {product.unit}</div>

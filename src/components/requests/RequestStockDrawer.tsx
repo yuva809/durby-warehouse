@@ -4,7 +4,6 @@ import { Drawer } from '../ui/Drawer'
 import { Button } from '../ui/Button'
 import { useWarehouseStore } from '../../store/useWarehouseStore'
 import { requestService } from '../../services/requestService'
-import { STATUS_STYLES, stockStatus } from '../../lib/utils'
 import { Badge } from '../ui/Badge'
 
 export function RequestStockDrawer({
@@ -119,25 +118,21 @@ export function RequestStockDrawer({
 
       {query && results.length > 0 && (
         <div className="mt-2 divide-y divide-ink-50 overflow-hidden rounded-xl ring-1 ring-ink-200/70">
-          {results.map((p) => {
-            const qty = branchQty(p.id)
-            const status = stockStatus(qty, p.minStock)
-            return (
-              <button
-                key={p.id}
-                onClick={() => addProduct(p.id)}
-                className="flex w-full items-center justify-between bg-white px-3.5 py-2.5 text-left hover:bg-brand-50/50 cursor-pointer"
-              >
-                <div>
-                  <div className="text-sm font-medium text-ink-800">{p.name}</div>
-                  <div className="text-xs text-ink-400">Current stock: {qty} {p.unit}</div>
-                </div>
-                <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${STATUS_STYLES[status].badge}`}>
-                  <Plus size={14} />
-                </span>
-              </button>
-            )
-          })}
+          {results.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => addProduct(p.id)}
+              className="flex w-full items-center justify-between bg-white px-3.5 py-2.5 text-left hover:bg-brand-50/50 cursor-pointer"
+            >
+              <div>
+                <div className="text-sm font-medium text-ink-800">{p.name}</div>
+                <div className="text-xs text-ink-400">{p.category}</div>
+              </div>
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                <Plus size={14} />
+              </span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -152,7 +147,7 @@ export function RequestStockDrawer({
               <div key={id} className="flex items-center gap-3 rounded-xl ring-1 ring-ink-200/70 p-3">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-ink-800">{product.name}</div>
-                  <div className="text-xs text-ink-400">Current stock: {branchQty(id)} {product.unit}</div>
+                  <div className="text-xs text-ink-400">{product.category}</div>
                 </div>
                 <input
                   type="number"

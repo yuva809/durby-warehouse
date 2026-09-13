@@ -29,7 +29,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   if (location.pathname === '/') {
     const branchId = branchIdForRole(view)
     if (branchId) {
-      meta = { ...meta, title: locations.find((l) => l.id === branchId)?.name ?? meta.title, subtitle: 'My Inventory & Requests' }
+      meta = { ...meta, title: locations.find((l) => l.id === branchId)?.name ?? meta.title, subtitle: 'Request, track, and receive stock' }
     } else if (view === 'delivery_person') {
       meta = { ...meta, title: "Today's Deliveries", subtitle: 'Pick, deliver, and confirm' }
     } else if (view === 'warehouse_manager') {

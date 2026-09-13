@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Check, Circle, ArrowRight, Truck, PackageCheck, CheckCircle2 } from 'lucide-react'
+import { Check, Truck, PackageCheck, CheckCircle2, ArrowRight } from 'lucide-react'
 import { Drawer } from '../ui/Drawer'
 import { Button } from '../ui/Button'
+import { TimelineRow } from '../ui/Timeline'
 import { useWarehouseStore } from '../../store/useWarehouseStore'
 import { transferService } from '../../services/transferService'
 import { deliveryService } from '../../services/deliveryService'
@@ -161,26 +162,5 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
         </div>
       )}
     </Drawer>
-  )
-}
-
-function TimelineRow({ label, state, isLast }: { label: string; state: 'done' | 'current' | 'upcoming'; isLast?: boolean }) {
-  return (
-    <div className="flex gap-3">
-      <div className="flex flex-col items-center">
-        <span
-          className={cn(
-            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-            state === 'done' && 'bg-emerald-500 text-white',
-            state === 'current' && 'bg-brand-500 text-white',
-            state === 'upcoming' && 'bg-ink-100 text-ink-300',
-          )}
-        >
-          {state === 'done' ? <Check size={13} /> : state === 'current' ? <ArrowRight size={13} /> : <Circle size={8} fill="currentColor" />}
-        </span>
-        {!isLast && <span className={cn('w-px flex-1 min-h-[16px]', state === 'done' ? 'bg-emerald-300' : 'bg-ink-150')} />}
-      </div>
-      <div className={cn('pb-4 text-sm', state === 'upcoming' ? 'text-ink-400' : 'font-medium text-ink-800')}>{label}</div>
-    </div>
   )
 }
