@@ -10,7 +10,8 @@ import { RequestStockDrawer } from '../requests/RequestStockDrawer'
 import { TransferDrawer } from '../transfers/TransferDrawer'
 import { useWarehouseStore } from '../../store/useWarehouseStore'
 import { formatDateTime } from '../../lib/utils'
-import { computeRequestTimeline } from '../../lib/requestTimeline'
+import { computeRequestTimeline, getCurrentStep } from '../../lib/requestTimeline'
+import type { StockRequest } from '../../types'
 
 export function BranchDashboard({ branchId }: { branchId: string }) {
   const locations = useWarehouseStore((s) => s.locations)
@@ -27,7 +28,17 @@ export function BranchDashboard({ branchId }: { branchId: string }) {
     .filter((r) => r.branchId === branchId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
-  const activeRequest = branchRequests.find((r) => r.status !== 'rejected' && r.status !== 'delivered')
+  // Spotlight whichever in-flight request is furthest along, not just the
+  // newest one — a branch can have an older approved/preparing request and a
+  // freshly submitted one at the same time, and the former is more actionable.
+  const activeRequest = branchRequests
+    .filter((r) => r.status !== 'rejected' && r.status !== 'delivered')
+    .reduce<StockRequest | undefined>((best, r) => {
+      if (!best) return r
+      const rProgress = getCurrentStep(r, transfers.find((t) => t.requestId === r.id))
+      const bestProgress = getCurrentStep(best, transfers.find((t) => t.requestId === best.id))
+      return rProgress > bestProgress ? r : best
+    }, undefined)
   const activeTransfer = activeRequest ? transfers.find((t) => t.requestId === activeRequest.id) : undefined
 
   return (

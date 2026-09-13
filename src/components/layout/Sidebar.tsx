@@ -16,26 +16,25 @@ import { LogoMark } from './LogoMark'
 import { useWarehouseStore } from '../../store/useWarehouseStore'
 import { branchIdForRole } from '../../lib/viewRoles'
 
+// A branch's job is request -> track -> receive, not inventory management —
+// each item opts into branch visibility rather than being cross-referenced
+// against a separate list, so a new item defaults to manager/overview-only.
 const NAV = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, branchVisible: true },
   { to: '/inventory', label: 'Inventory', icon: Boxes },
   { to: '/products', label: 'Products', icon: Package },
   { to: '/branches', label: 'Branches', icon: Store },
-  { to: '/requests', label: 'Stock Requests', icon: ClipboardList },
+  { to: '/requests', label: 'Stock Requests', icon: ClipboardList, branchVisible: true },
   { to: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
   { to: '/deliveries', label: 'Deliveries', icon: Truck },
   { to: '/activity', label: 'Activity', icon: Activity },
-  { to: '/roadmap', label: 'Roadmap', icon: Map },
+  { to: '/roadmap', label: 'Roadmap', icon: Map, branchVisible: true },
 ]
-
-// A branch's job is request -> track -> receive, not inventory management —
-// keep their nav down to what that actually needs.
-const BRANCH_NAV_PATHS = new Set(['/', '/requests', '/roadmap'])
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const view = useWarehouseStore((s) => s.view)
   const isBranch = !!branchIdForRole(view)
-  const navItems = isBranch ? NAV.filter((item) => BRANCH_NAV_PATHS.has(item.to)) : NAV
+  const navItems = isBranch ? NAV.filter((item) => item.branchVisible) : NAV
 
   return (
     <>

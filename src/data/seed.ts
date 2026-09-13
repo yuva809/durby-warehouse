@@ -194,7 +194,7 @@ export const INITIAL_REQUESTS: StockRequest[] = [
   {
     id: 'REQ-1015',
     branchId: 'b2',
-    status: 'delivered',
+    status: 'approved',
     createdAt: timeToday(8, 40),
     reviewedAt: timeToday(8, 55),
     items: [

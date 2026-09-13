@@ -7,9 +7,8 @@ import { useWarehouseStore } from '../../store/useWarehouseStore'
 import { transferService } from '../../services/transferService'
 import { deliveryService } from '../../services/deliveryService'
 import { cn, formatDateTime } from '../../lib/utils'
+import { TRANSFER_STATUS_ORDER } from '../../lib/requestTimeline'
 import type { TransferStatus } from '../../types'
-
-const STATUS_ORDER: TransferStatus[] = ['ready', 'assigned', 'picking', 'out_for_delivery', 'delivered']
 
 const STEPS: { key: TransferStatus; label: string }[] = [
   { key: 'ready', label: 'Ready for Delivery' },
@@ -32,7 +31,7 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
   if (!transfer) return null
 
   const branchName = locations.find((l) => l.id === transfer.branchId)?.name ?? ''
-  const currentIndex = STATUS_ORDER.indexOf(transfer.status)
+  const currentIndex = TRANSFER_STATUS_ORDER.indexOf(transfer.status)
   const allPicked = transfer.items.every((it) => (it.pickedQty ?? 0) >= it.qty)
 
   return (
