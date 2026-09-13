@@ -44,20 +44,20 @@ export function ViewSwitcher() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2.5 rounded-xl bg-ink-900 pl-1.5 pr-3 py-1.5 text-white hover:bg-ink-800 transition-colors cursor-pointer"
+        className="flex max-w-[55vw] items-center gap-2 rounded-xl bg-ink-900 pl-1.5 pr-2.5 py-1.5 text-white hover:bg-ink-800 transition-colors cursor-pointer sm:max-w-none sm:gap-2.5 sm:pr-3"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500/90">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-500/90">
           <Eye size={14} />
         </span>
-        <span className="text-left leading-tight">
-          <span className="block text-[10px] font-medium text-ink-400">Viewing as</span>
-          <span className="block text-sm font-semibold">{current.label}</span>
+        <span className="min-w-0 text-left leading-tight">
+          <span className="hidden text-[10px] font-medium text-ink-400 sm:block">Viewing as</span>
+          <span className="block truncate text-sm font-semibold">{current.label}</span>
         </span>
-        <ChevronDown size={15} className={cn('text-ink-400 transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={15} className={cn('shrink-0 text-ink-400 transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-72 rounded-xl bg-white p-1.5 shadow-2xl ring-1 ring-ink-200 animate-slide-up" style={{ animationDuration: '0.15s' }}>
+        <div className="absolute right-0 z-40 mt-2 w-[min(288px,88vw)] rounded-xl bg-white p-1.5 shadow-2xl ring-1 ring-ink-200 animate-slide-up" style={{ animationDuration: '0.15s' }}>
           {Object.entries(groups).map(([group, roles]) => {
             const Icon = GROUP_ICON[group]
             return (

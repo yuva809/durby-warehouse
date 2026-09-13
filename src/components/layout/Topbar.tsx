@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { RotateCcw } from 'lucide-react'
+import { Menu, RotateCcw } from 'lucide-react'
 import { ViewSwitcher } from './ViewSwitcher'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -19,7 +19,7 @@ const TITLES: { match: (p: string) => boolean; title: string; subtitle: string }
   { match: (p) => p.startsWith('/roadmap'), title: 'Roadmap', subtitle: "What's next for Durby Warehouse" },
 ]
 
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const location = useLocation()
   const resetDemo = useWarehouseStore((s) => s.resetDemo)
   const view = useWarehouseStore((s) => s.view)
@@ -45,19 +45,27 @@ export function Topbar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-ink-200/70 bg-white/85 px-6 py-4 backdrop-blur-md">
-      <div>
-        <h1 className="font-display text-xl font-bold text-ink-900">{meta.title}</h1>
-        <p className="text-sm text-ink-500">{meta.subtitle}</p>
+    <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-ink-200/70 bg-white/85 px-4 py-3 backdrop-blur-md sm:gap-4 sm:px-6 sm:py-4">
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          onClick={onMenuClick}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-600 hover:bg-ink-100 cursor-pointer lg:hidden"
+        >
+          <Menu size={19} />
+        </button>
+        <div className="min-w-0">
+          <h1 className="truncate font-display text-base font-bold text-ink-900 sm:text-xl">{meta.title}</h1>
+          <p className="hidden truncate text-sm text-ink-500 sm:block">{meta.subtitle}</p>
+        </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <button
           onClick={() => setConfirmingReset(true)}
           title="Reset demo data"
-          className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-ink-500 ring-1 ring-inset ring-ink-200 hover:bg-ink-50 hover:text-ink-700 cursor-pointer"
+          className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-medium text-ink-500 ring-1 ring-inset ring-ink-200 hover:bg-ink-50 hover:text-ink-700 cursor-pointer sm:px-3"
         >
           <RotateCcw size={14} />
-          Reset Demo
+          <span className="hidden sm:inline">Reset Demo</span>
         </button>
         <ViewSwitcher />
       </div>
