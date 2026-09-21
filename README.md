@@ -1,40 +1,42 @@
-# Durby Warehouse — V1 Demo Prototype
+# Durby Warehouse
 
-An interactive, standalone prototype demonstrating how Durby can manage one central
-warehouse supplying five grocery branches: stock requests, warehouse review and
-approval, transfers, and driver delivery — all connected in one live flow.
+One central warehouse supplying five grocery branches: stock requests,
+warehouse review/approval, transfers, and driver delivery, connected in one
+live flow.
 
-This is a **prototype**, not the production system. There is no backend, no auth,
-and no database — all data is mock/demo data held in local app state (Zustand),
-persisted to `localStorage` so the demo survives a page refresh. Use the **Reset
-Demo** button (top right) to restore the starting seed data at any time.
+## Layout
 
-## Running it
-
-```bash
-npm install
-npm run dev
+```
+apps/web/    React + Vite frontend (V1 UI — see apps/web/README.md)
+apps/api/    NestJS + PostgreSQL + Redis backend (V2)
+infra/       Caddy reverse-proxy config
+scripts/     DB backup/restore, end-to-end smoke test
+docker-compose.yml   The whole stack: reverse-proxy, frontend, backend, worker, postgres, redis
+DEPLOY.md    How to run this locally and on a Hetzner VPS
 ```
 
-Open the printed local URL (usually http://localhost:5173).
+## Quick start
 
-## How to demo it
+```bash
+cp .env.example .env      # edit values
+docker compose up -d --build
+docker compose exec backend npx prisma migrate deploy
+docker compose exec backend npm run seed
+```
 
-Use the **Viewing as** switcher (top right) instead of logging in — it swaps the
-whole interface between Overview, Warehouse Manager, each of the 5 branches, and
-Delivery Person.
+Frontend: http://localhost — API: http://api.localhost/api/health
 
-A full walkthrough script: switch to **Branch 3** → **Request Stock** (Rice,
-Cooking Oil, Sugar) → switch to **Warehouse Manager** → open the new request,
-adjust Sugar down, **Approve** → **Assign Driver** → switch to **Delivery
-Person** → **Start Picking** → **Start Delivery** → **Mark Delivered** → switch
-back to **Branch 3** and watch the inventory numbers update live. Check
-**Activity** for the full audit trail.
+See **[DEPLOY.md](./DEPLOY.md)** for the full local-dev and Hetzner CPX22
+deployment walkthrough, backups, and current known limitations (most
+importantly: the frontend container serves the V1 UI as-is — it is not yet
+wired to call this API, that's the next increment).
 
-## Architecture notes (for the eventual real build)
+## Status
 
-Pages talk to a thin service layer (`src/services/*`) — `inventoryService`,
-`requestService`, `transferService`, `deliveryService`, `activityService` —
-which today just reads/writes the local Zustand store (`src/store`). When a
-real backend exists, only those service files need to change to call a real
-API; pages and components don't need to know the difference.
+V1 was a frontend-only demo prototype (Zustand + localStorage, no backend).
+V2 is a real backend being built on top of it: PostgreSQL-backed inventory
+with a proper reserve/pick ledger and transactional concurrency safety, JWT
+auth with server-enforced roles, and the same request → approve → transfer →
+deliver → confirm workflow V1 proved out. See the project status report for
+the current build (schema, endpoints, what's tested vs. not yet run against
+a live database, and what's next).

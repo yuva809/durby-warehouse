@@ -1,0 +1,125 @@
+name: durby-warehouse
+
+services:
+  reverse-proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-localhost}
+      API_DOMAIN: ${API_DOMAIN:-api.localhost}
+    depends_on:
+      - frontend
+      - backend
+    networks: [public, internal]
+
+  frontend:
+    build:
+      context: ./apps/web
+    restart: unless-stopped
+    expose: ["80"]
+    networks: [internal]
+
+  backend:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      CORS_ORIGIN: https://${FRONTEND_DOMAIN:-localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose: ["3000"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Same image as `backend`, different entrypoint — see apps/api/src/worker.ts.
+  # Deliberately one process for both queues rather than a second worker
+  # service, per "avoid unnecessary workers/microservices."
+  worker:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [internal]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No top-level `ports:` mapping — reachable only from other containers on
+    # the `internal` network, never from the host network or the internet.
+    # `127.0.0.1:5432:5432` below is loopback-only, for local dev tooling
+    # (psql, Prisma Studio) on the same machine — comment out for the VPS
+    # if you don't need host-side DB access there.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Same loopback-only reasoning as postgres above.
+    ports:
+      - "127.0.0.1:6379:6379"
+
+networks:
+  public:
+  internal:
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

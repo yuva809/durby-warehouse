@@ -1,0 +1,271 @@
+// Durby Warehouse V2 — schema
+// Design notes:
+// - `available` stock is NEVER stored; it's always computed as onHand - reserved,
+//   both in application code and in the raw-SQL conditional updates used for
+//   reservation, so it can never drift from the two numbers that back it.
+// - InventoryMovement is the append-only ledger. Nothing about physical stock
+//   is trusted unless it is backed by a movement row.
+// - ActivityLog is a separate, human-readable audit trail (V1's "Activity"
+//   page) — it is NOT the inventory ledger and must not be used to recompute
+//   balances.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  WAREHOUSE_MANAGER
+  BRANCH_USER
+  DRIVER
+}
+
+enum LocationType {
+  WAREHOUSE
+  BRANCH
+}
+
+enum RequestStatus {
+  PENDING
+  REVIEWING
+  APPROVED
+  REJECTED
+  CANCELLED
+  PARTIALLY_DELIVERED
+  DELIVERED
+}
+
+enum TransferStatus {
+  READY
+  ASSIGNED
+  PICKING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  PARTIALLY_DELIVERED
+  FAILED
+}
+
+enum MovementType {
+  RECEIPT
+  TRANSFER_OUT
+  TRANSFER_IN
+  DAMAGE
+  EXPIRED
+  RECOUNT
+  ADJUSTMENT
+  RETURN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  /// For BRANCH_USER: the single branch they belong to. Null for other roles.
+  locationId   String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  location Location? @relation("UserHomeLocation", fields: [locationId], references: [id])
+
+  requestsCreated   StockRequest[]      @relation("RequestCreatedBy")
+  requestsReviewed  StockRequest[]      @relation("RequestReviewedBy")
+  transfersAsDriver Transfer[]          @relation("TransferDriver")
+  transfersConfirmed Transfer[]         @relation("TransferConfirmedBy")
+  movements         InventoryMovement[]
+  activity          ActivityLog[]
+
+  @@index([locationId])
+}
+
+model Location {
+  id        String       @id @default(cuid())
+  name      String
+  type      LocationType
+  shortName String?
+  city      String?
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users     User[]          @relation("UserHomeLocation")
+  inventory InventoryItem[]
+  movements InventoryMovement[]
+  requests  StockRequest[]
+  transfers Transfer[]      @relation("TransferBranch")
+}
+
+model Product {
+  id         String    @id @default(cuid())
+  sku        String    @unique
+  name       String
+  category   String
+  brand      String?
+  pack       String?
+  unit       String
+  minStock   Int       @default(0)
+  unitPrice  Decimal   @db.Decimal(10, 2)
+  expiryDate DateTime?
+  sourceRef  String?
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  inventory     InventoryItem[]
+  movements     InventoryMovement[]
+  requestItems  StockRequestItem[]
+  transferItems TransferItem[]
+}
+
+/// One row per (location, product). onHand and reserved are only ever
+/// mutated by InventoryService inside a transaction that also writes a
+/// matching InventoryMovement row (for onHand changes).
+model InventoryItem {
+  id         String   @id @default(cuid())
+  locationId String
+  productId  String
+  onHand     Int      @default(0)
+  reserved   Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id])
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@unique([locationId, productId])
+  @@index([productId])
+}
+
+/// Append-only inventory ledger. Every physical stock change is one row here.
+model InventoryMovement {
+  id         String       @id @default(cuid())
+  productId  String
+  locationId String
+  /// Signed delta applied to onHand at this location for this product.
+  quantity   Int
+  type       MovementType
+  /// Human-facing reference, e.g. a request/transfer code (REQ-1024, TR-1024).
+  reference  String?
+  reason     String?
+  userId     String?
+  createdAt  DateTime     @default(now())
+
+  product  Product   @relation(fields: [productId], references: [id])
+  location Location  @relation(fields: [locationId], references: [id])
+  user     User?     @relation(fields: [userId], references: [id])
+
+  @@index([productId, locationId])
+  @@index([reference])
+  @@index([createdAt])
+}
+
+model StockRequest {
+  id              String        @id @default(cuid())
+  code            String        @unique
+  branchId        String
+  status          RequestStatus @default(PENDING)
+  createdById     String
+  reviewedById    String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  cancelledAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  branch     Location           @relation(fields: [branchId], references: [id])
+  createdBy  User               @relation("RequestCreatedBy", fields: [createdById], references: [id])
+  reviewedBy User?              @relation("RequestReviewedBy", fields: [reviewedById], references: [id])
+  items      StockRequestItem[]
+  transfer   Transfer?
+
+  @@index([branchId, status])
+}
+
+model StockRequestItem {
+  id           String @id @default(cuid())
+  requestId    String
+  productId    String
+  requestedQty Int
+  approvedQty  Int?
+
+  request StockRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id])
+
+  @@unique([requestId, productId])
+}
+
+model Transfer {
+  id             String         @id @default(cuid())
+  code           String         @unique
+  requestId      String         @unique
+  branchId       String
+  status         TransferStatus @default(READY)
+  driverId       String?
+  etaDate        DateTime?
+  etaWindowStart String?
+  etaWindowEnd   String?
+  outForDeliveryAt DateTime?
+  deliveredAt    DateTime?
+  failedReason   String?
+  failedAt       DateTime?
+  confirmedAt    DateTime?
+  confirmedById  String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  request      StockRequest   @relation(fields: [requestId], references: [id])
+  branch       Location       @relation("TransferBranch", fields: [branchId], references: [id])
+  driver       User?          @relation("TransferDriver", fields: [driverId], references: [id])
+  confirmedBy  User?          @relation("TransferConfirmedBy", fields: [confirmedById], references: [id])
+  items        TransferItem[]
+
+  @@index([branchId, status])
+  @@index([driverId, status])
+}
+
+model TransferItem {
+  id           String @id @default(cuid())
+  transferId   String
+  productId    String
+  /// Planned quantity, copied from the request's approvedQty at approval time.
+  approvedQty  Int
+  /// Actual quantity picked by the driver — authoritative for the stock
+  /// movement created at dispatch. Null until picking is recorded.
+  pickedQty    Int?
+  /// Actual quantity the branch received — defaults to pickedQty at delivery
+  /// time but can be adjusted down if something didn't make it (breakage etc).
+  deliveredQty Int?
+
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@unique([transferId, productId])
+}
+
+/// Human-readable narrative audit trail (V1's Activity page). NOT the
+/// inventory ledger — see InventoryMovement for that.
+model ActivityLog {
+  id        String   @id @default(cuid())
+  message   String
+  kind      String
+  userId    String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+}
+
+/// Monotonic per-prefix counters for human-friendly codes (REQ-1024, TR-1024),
+/// generated via a single atomic UPDATE ... RETURNING so concurrent creates
+/// never collide — see CodeGeneratorService.
+model CodeSequence {
+  prefix String @id
+  value  Int    @default(1023)
+}

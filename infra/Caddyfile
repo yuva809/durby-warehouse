@@ -1,0 +1,15 @@
+# Durby Warehouse reverse proxy.
+#
+# Set FRONTEND_DOMAIN / API_DOMAIN in the root .env for production
+# (e.g. warehouse.example.com / api.warehouse.example.com) — Caddy will
+# provision and renew Let's Encrypt certificates for them automatically.
+# The localhost defaults below are for local `docker compose up` only; Caddy
+# serves those over plain HTTP and does not attempt ACME for them.
+
+{$FRONTEND_DOMAIN:localhost} {
+	reverse_proxy frontend:80
+}
+
+{$API_DOMAIN:api.localhost} {
+	reverse_proxy backend:3000
+}
