@@ -1,5 +1,5 @@
 import { Card } from '../components/ui/Card'
-import { useWarehouseStore } from '../store/useWarehouseStore'
+import { useActivity } from '../hooks/useActivity'
 import { formatTime } from '../lib/utils'
 import { ClipboardList, Eye, ArrowLeftRight, Truck, Boxes, Settings, type LucideIcon } from 'lucide-react'
 import type { ActivityEvent } from '../types'
@@ -14,11 +14,11 @@ const KIND_META: Record<ActivityEvent['kind'], { icon: LucideIcon; className: st
 }
 
 export default function Activity() {
-  const activity = useWarehouseStore((s) => s.activity)
+  const { data: activity = [] } = useActivity()
 
   const groups = new Map<string, ActivityEvent[]>()
   for (const a of activity) {
-    const day = new Date(a.timestamp).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long' })
+    const day = new Date(a.createdAt).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long' })
     groups.set(day, [...(groups.get(day) ?? []), a])
   }
 
@@ -41,7 +41,7 @@ export default function Activity() {
                   </div>
                   <div className="pb-5">
                     <div className="text-sm text-ink-800">{a.message}</div>
-                    <div className="text-xs text-ink-400">{formatTime(a.timestamp)}</div>
+                    <div className="text-xs text-ink-400">{formatTime(a.createdAt)}</div>
                   </div>
                 </div>
               )

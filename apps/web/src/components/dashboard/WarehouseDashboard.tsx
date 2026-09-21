@@ -9,60 +9,70 @@ import { InventoryHealthChart } from './InventoryHealthChart'
 import { BranchStockChart } from './BranchStockChart'
 import { RequestDrawer } from '../requests/RequestDrawer'
 import { TransferDrawer } from '../transfers/TransferDrawer'
-import { useWarehouseStore } from '../../store/useWarehouseStore'
-import { computeBranchStats } from '../../lib/branchStats'
-import { inventoryService } from '../../services/inventoryService'
+import { useProducts, useLocations } from '../../hooks/useCatalog'
+import { useInventory } from '../../hooks/useInventory'
+import { useRequests } from '../../hooks/useRequests'
+import { useTransfers } from '../../hooks/useTransfers'
 import { formatCurrency, formatDateTime, stockStatus } from '../../lib/utils'
-import { BRANCH_IDS } from '../../types'
+import { WAREHOUSE_ID } from '../../types'
 
 export function WarehouseDashboard() {
-  const products = useWarehouseStore((s) => s.products)
-  const locations = useWarehouseStore((s) => s.locations)
-  const inventory = useWarehouseStore((s) => s.inventory)
-  const requests = useWarehouseStore((s) => s.requests)
-  const transfers = useWarehouseStore((s) => s.transfers)
+  const { data: products = [] } = useProducts()
+  const { data: locations = [] } = useLocations()
+  const { data: inventoryLines = [] } = useInventory() // all locations, manager/admin only
+  const { data: requests = [] } = useRequests()
+  const { data: transfers = [] } = useTransfers()
   const navigate = useNavigate()
   const [openRequest, setOpenRequest] = useState<string | null>(null)
   const [openTransfer, setOpenTransfer] = useState<string | null>(null)
 
-  const branches = locations.filter((l) => BRANCH_IDS.includes(l.id as (typeof BRANCH_IDS)[number]))
+  const branches = locations.filter((l) => l.type === 'BRANCH')
+
+  const byLocationProduct = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const line of inventoryLines) map.set(`${line.locationId}:${line.productId}`, line.onHand)
+    return map
+  }, [inventoryLines])
 
   const kpis = useMemo(() => {
-    const warehouseValue = inventoryService.getWarehouseValue()
-    const pending = requests.filter((r) => r.status === 'pending' || r.status === 'reviewing').length
+    const warehouseValue = products.reduce((sum, p) => sum + (byLocationProduct.get(`${WAREHOUSE_ID}:${p.id}`) ?? 0) * p.unitPrice, 0)
+    const pending = requests.filter((r) => r.status === 'PENDING' || r.status === 'REVIEWING').length
     let lowStock = 0
-    for (const b of branches) lowStock += computeBranchStats(b.id, products, inventory, requests, transfers).lowStockCount
-    const todaysDeliveries = transfers.filter((t) => t.status !== 'ready').length
-    return { warehouseValue, pending, lowStock, todaysDeliveries }
-  }, [products, inventory, requests, transfers, branches])
-
-  const health = useMemo(() => {
-    let healthy = 0,
-      low = 0,
-      out = 0
     for (const b of branches) {
       for (const p of products) {
-        const status = stockStatus(inventory[b.id]?.[p.id] ?? 0, p.minStock)
+        const status = stockStatus(byLocationProduct.get(`${b.id}:${p.id}`) ?? 0, p.minStock)
+        if (status !== 'healthy') lowStock++
+      }
+    }
+    const todaysDeliveries = transfers.filter((t) => t.status !== 'READY').length
+    return { warehouseValue, pending, lowStock, todaysDeliveries }
+  }, [products, byLocationProduct, requests, transfers, branches])
+
+  const health = useMemo(() => {
+    let healthy = 0, low = 0, out = 0
+    for (const b of branches) {
+      for (const p of products) {
+        const status = stockStatus(byLocationProduct.get(`${b.id}:${p.id}`) ?? 0, p.minStock)
         if (status === 'healthy') healthy++
         else if (status === 'low') low++
         else out++
       }
     }
     return { healthy, low, out }
-  }, [branches, products, inventory])
+  }, [branches, products, byLocationProduct])
 
   const distribution = branches.map((b) => ({
     name: b.shortName ?? b.name,
-    value: Math.round(products.reduce((sum, p) => sum + (inventory[b.id]?.[p.id] ?? 0) * p.unitPrice, 0)),
+    value: Math.round(products.reduce((sum, p) => sum + (byLocationProduct.get(`${b.id}:${p.id}`) ?? 0) * p.unitPrice, 0)),
   }))
 
   const pendingRequests = [...requests]
-    .filter((r) => r.status === 'pending' || r.status === 'reviewing')
+    .filter((r) => r.status === 'PENDING' || r.status === 'REVIEWING')
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5)
 
   const todaysDeliveries = [...transfers]
-    .filter((t) => t.status !== 'ready')
+    .filter((t) => t.status !== 'READY')
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5)
 
@@ -92,22 +102,19 @@ export function WarehouseDashboard() {
             <EmptyState title="No pending requests" subtitle="All caught up — new branch requests will appear here." />
           ) : (
             <div className="divide-y divide-ink-50 border-t border-ink-100">
-              {pendingRequests.map((r) => {
-                const branch = locations.find((l) => l.id === r.branchId)
-                return (
-                  <button
-                    key={r.id}
-                    onClick={() => setOpenRequest(r.id)}
-                    className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-brand-50/40 cursor-pointer"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-ink-900">{r.id}</div>
-                      <div className="text-xs text-ink-400">{branch?.name} · {r.items.length} products</div>
-                    </div>
-                    <RequestStatusBadge status={r.status} />
-                  </button>
-                )
-              })}
+              {pendingRequests.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => setOpenRequest(r.id)}
+                  className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-brand-50/40 cursor-pointer"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-ink-900">{r.code}</div>
+                    <div className="text-xs text-ink-400">{r.branch?.name} · {r.items.length} products</div>
+                  </div>
+                  <RequestStatusBadge status={r.status} />
+                </button>
+              ))}
             </div>
           )}
         </Card>
@@ -126,22 +133,19 @@ export function WarehouseDashboard() {
             <EmptyState title="No deliveries yet" subtitle="Approved transfers will show up here." />
           ) : (
             <div className="divide-y divide-ink-50 border-t border-ink-100">
-              {todaysDeliveries.map((t) => {
-                const branch = locations.find((l) => l.id === t.branchId)
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setOpenTransfer(t.id)}
-                    className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-brand-50/40 cursor-pointer"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-ink-900">{branch?.name}</div>
-                      <div className="text-xs text-ink-400">{t.id} · {formatDateTime(t.createdAt)}</div>
-                    </div>
-                    <TransferStatusBadge status={t.status} />
-                  </button>
-                )
-              })}
+              {todaysDeliveries.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setOpenTransfer(t.id)}
+                  className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-brand-50/40 cursor-pointer"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-ink-900">{t.branch?.name}</div>
+                    <div className="text-xs text-ink-400">{t.code} · {formatDateTime(t.createdAt)}</div>
+                  </div>
+                  <TransferStatusBadge status={t.status} />
+                </button>
+              ))}
             </div>
           )}
         </Card>

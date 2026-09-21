@@ -1,30 +1,23 @@
 import { useMemo, useState } from 'react'
-import { Search, Plus, X, CheckCircle2, ClipboardList } from 'lucide-react'
+import { Search, Plus, X, CheckCircle2, ClipboardList, AlertTriangle } from 'lucide-react'
 import { Drawer } from '../ui/Drawer'
 import { Button } from '../ui/Button'
-import { useWarehouseStore } from '../../store/useWarehouseStore'
-import { requestService } from '../../services/requestService'
 import { Badge } from '../ui/Badge'
+import { useProducts } from '../../hooks/useCatalog'
+import { useSubmitRequest } from '../../hooks/useRequests'
 
-export function RequestStockDrawer({
-  branchId,
-  open,
-  onClose,
-}: {
-  branchId: string
-  open: boolean
-  onClose: () => void
-}) {
-  const products = useWarehouseStore((s) => s.products)
-  const inventory = useWarehouseStore((s) => s.inventory)
+export function RequestStockDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data: products = [] } = useProducts()
+  const submit = useSubmitRequest()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Record<string, number>>({})
-  const [submittedId, setSubmittedId] = useState<string | null>(null)
+  const [submittedCode, setSubmittedCode] = useState<string | null>(null)
 
   function reset() {
     setQuery('')
     setSelected({})
-    setSubmittedId(null)
+    setSubmittedCode(null)
+    submit.reset()
   }
 
   function handleClose() {
@@ -32,12 +25,10 @@ export function RequestStockDrawer({
     onClose()
   }
 
-  const branchQty = (productId: string) => inventory[branchId]?.[productId] ?? 0
-
   const results = useMemo(
     () =>
       products
-        .filter((p) => !selected[p.id])
+        .filter((p) => p.active && !selected[p.id])
         .filter((p) => p.name.toLowerCase().includes(query.toLowerCase()))
         .slice(0, 8),
     [products, query, selected],
@@ -45,8 +36,9 @@ export function RequestStockDrawer({
 
   function addProduct(productId: string) {
     const product = products.find((p) => p.id === productId)!
-    const current = branchQty(productId)
-    const suggested = Math.max(product.minStock - current, product.unit === 'kg' || product.unit === 'liter' ? 10 : 5)
+    // Branches can't see any stock numbers (their own or the warehouse's),
+    // so this is just a reasonable starting point to edit, not a computed gap.
+    const suggested = Math.max(product.minStock, product.unit === 'kg' || product.unit === 'liter' ? 10 : 5)
     setSelected((s) => ({ ...s, [productId]: suggested }))
     setQuery('')
   }
@@ -63,16 +55,16 @@ export function RequestStockDrawer({
     setSelected((s) => ({ ...s, [productId]: Math.max(0, qty) }))
   }
 
-  function submit() {
+  async function handleSubmit() {
     const items = Object.entries(selected).map(([productId, requestedQty]) => ({ productId, requestedQty }))
     if (items.length === 0) return
-    const id = requestService.submit(branchId, items)
-    setSubmittedId(id)
+    const request = await submit.mutateAsync(items)
+    setSubmittedCode(request.code)
   }
 
   const selectedIds = Object.keys(selected)
 
-  if (submittedId) {
+  if (submittedCode) {
     return (
       <Drawer open={open} onClose={handleClose} title="Request Stock">
         <div className="flex flex-col items-center py-10 text-center">
@@ -80,7 +72,7 @@ export function RequestStockDrawer({
             <CheckCircle2 size={32} />
           </div>
           <h3 className="mt-4 font-display text-xl font-bold text-ink-900">Request Submitted</h3>
-          <div className="mt-1 font-display text-lg font-semibold text-brand-600">{submittedId}</div>
+          <div className="mt-1 font-display text-lg font-semibold text-brand-600">{submittedCode}</div>
           <p className="mt-2 max-w-xs text-sm text-ink-500">
             Your request has been sent to the warehouse manager.
           </p>
@@ -100,9 +92,17 @@ export function RequestStockDrawer({
       title="Request Stock"
       subtitle="Search products and add the quantities you need"
       footer={
-        <Button className="w-full" size="lg" disabled={selectedIds.length === 0} onClick={submit}>
-          <ClipboardList size={16} /> Submit Request {selectedIds.length > 0 && `(${selectedIds.length})`}
-        </Button>
+        <div className="space-y-2">
+          {submit.isError && (
+            <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              <AlertTriangle size={14} className="shrink-0" /> {(submit.error as Error).message}
+            </div>
+          )}
+          <Button className="w-full" size="lg" disabled={selectedIds.length === 0 || submit.isPending} onClick={handleSubmit}>
+            <ClipboardList size={16} />
+            {submit.isPending ? 'Submitting…' : `Submit Request ${selectedIds.length > 0 ? `(${selectedIds.length})` : ''}`}
+          </Button>
+        </div>
       }
     >
       <div className="relative">

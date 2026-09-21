@@ -1,11 +1,8 @@
-import { useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { Menu, RotateCcw } from 'lucide-react'
-import { ViewSwitcher } from './ViewSwitcher'
-import { Modal } from '../ui/Modal'
-import { Button } from '../ui/Button'
-import { useWarehouseStore } from '../../store/useWarehouseStore'
-import { branchIdForRole } from '../../lib/viewRoles'
+import { useLocation as useRouteLocation, useNavigate } from 'react-router-dom'
+import { LogOut, Menu } from 'lucide-react'
+import { useAuthStore } from '../../auth/authStore'
+import { isBranchUser, isDriver, isManager, ROLE_LABEL } from '../../auth/roles'
+import { useLocations } from '../../hooks/useCatalog'
 
 const TITLES: { match: (p: string) => boolean; title: string; subtitle: string }[] = [
   { match: (p) => p === '/', title: 'Dashboard', subtitle: 'Real-time view across the network' },
@@ -20,28 +17,28 @@ const TITLES: { match: (p: string) => boolean; title: string; subtitle: string }
 ]
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
-  const location = useLocation()
-  const resetDemo = useWarehouseStore((s) => s.resetDemo)
-  const view = useWarehouseStore((s) => s.view)
-  const locations = useWarehouseStore((s) => s.locations)
-  let meta = TITLES.find((t) => t.match(location.pathname)) ?? TITLES[0]
+  const routeLocation = useRouteLocation()
+  const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
+  const { data: locations } = useLocations()
 
-  if (location.pathname === '/') {
-    const branchId = branchIdForRole(view)
-    if (branchId) {
-      meta = { ...meta, title: locations.find((l) => l.id === branchId)?.name ?? meta.title, subtitle: 'Request, track, and receive stock' }
-    } else if (view === 'delivery_person') {
+  let meta = TITLES.find((t) => t.match(routeLocation.pathname)) ?? TITLES[0]
+
+  if (routeLocation.pathname === '/' && user) {
+    if (isBranchUser(user)) {
+      const branchName = locations?.find((l) => l.id === user.locationId)?.name ?? 'My Branch'
+      meta = { ...meta, title: branchName, subtitle: 'Request, track, and receive stock' }
+    } else if (isDriver(user)) {
       meta = { ...meta, title: "Today's Deliveries", subtitle: 'Pick, deliver, and confirm' }
-    } else if (view === 'warehouse_manager') {
+    } else if (isManager(user)) {
       meta = { ...meta, subtitle: 'Review requests, approve transfers, keep branches stocked' }
     }
   }
 
-  const [confirmingReset, setConfirmingReset] = useState(false)
-
-  function handleReset() {
-    resetDemo()
-    setConfirmingReset(false)
+  function handleLogout() {
+    logout()
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -59,37 +56,20 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        {user && (
+          <div className="hidden text-right leading-tight sm:block">
+            <div className="text-sm font-semibold text-ink-800">{user.name}</div>
+            <div className="text-xs text-ink-400">{ROLE_LABEL[user.role]}</div>
+          </div>
+        )}
         <button
-          onClick={() => setConfirmingReset(true)}
-          title="Reset demo data"
-          className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-medium text-ink-500 ring-1 ring-inset ring-ink-200 hover:bg-ink-50 hover:text-ink-700 cursor-pointer sm:px-3"
+          onClick={handleLogout}
+          title="Log out"
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-ink-500 ring-1 ring-inset ring-ink-200 hover:bg-ink-50 hover:text-ink-700 cursor-pointer"
         >
-          <RotateCcw size={14} />
-          <span className="hidden sm:inline">Reset Demo</span>
+          <LogOut size={16} />
         </button>
-        <ViewSwitcher />
       </div>
-
-      <Modal open={confirmingReset} onClose={() => setConfirmingReset(false)}>
-        <div className="p-6">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-ink-100 text-ink-500">
-            <RotateCcw size={19} />
-          </div>
-          <h3 className="mt-3 font-display text-lg font-bold text-ink-900">Reset Demo?</h3>
-          <p className="mt-1 text-sm text-ink-500">
-            This restores every branch, request, and transfer to its starting state. Anything changed during this
-            session will be lost.
-          </p>
-          <div className="mt-5 flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setConfirmingReset(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" className="flex-1" onClick={handleReset}>
-              Reset Demo
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </header>
   )
 }

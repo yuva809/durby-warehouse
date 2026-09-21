@@ -1,19 +1,31 @@
-import { useWarehouseStore } from '../store/useWarehouseStore'
+import { api } from '../lib/apiClient'
+import type { Transfer } from '../types'
 
 export const deliveryService = {
-  listActive() {
-    return useWarehouseStore.getState().transfers.filter((t) => t.status !== 'ready')
+  startPicking(transferId: string): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${transferId}/start-picking`)
   },
-  startPicking(transferId: string) {
-    useWarehouseStore.getState().startPicking(transferId)
+  setPickedQty(transferId: string, productId: string, pickedQty: number) {
+    return api.post(`/transfers/${transferId}/picked-qty`, { productId, pickedQty })
   },
-  setPickedQty(transferId: string, productId: string, qty: number) {
-    useWarehouseStore.getState().setPickedQty(transferId, productId, qty)
+  /**
+   * "Start Delivery." Turns the reservation into a real stock movement using
+   * whatever was actually recorded via setPickedQty — see InventoryService
+   * on the backend. There is no client-side inventory math here at all.
+   */
+  dispatch(transferId: string): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${transferId}/dispatch`)
   },
-  startDelivery(transferId: string) {
-    useWarehouseStore.getState().startDelivery(transferId)
+  markDelivered(transferId: string, items?: { productId: string; deliveredQty: number }[]): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${transferId}/deliver`, items ? { items } : undefined)
   },
-  markDelivered(transferId: string) {
-    useWarehouseStore.getState().markDelivered(transferId)
+  confirmReceipt(transferId: string): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${transferId}/confirm-receipt`)
+  },
+  fail(transferId: string, reason: string): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${transferId}/fail`, { reason })
+  },
+  retry(transferId: string, driverId?: string): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${transferId}/retry`, driverId ? { driverId } : undefined)
   },
 }

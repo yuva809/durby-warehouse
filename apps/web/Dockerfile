@@ -1,13 +1,17 @@
 # Durby Warehouse frontend — static build served by nginx.
 #
-# NOTE (see deployment README "Known limitations"): this still ships the V1
-# build, which talks to Zustand + localStorage, not the API in this same
-# compose stack. The container/proxy wiring is real and works today; the
-# frontend code itself has not yet been rewired to call the backend — that
-# is the next increment, not done in this pass.
+# VITE_API_URL is baked into the JS bundle at BUILD time (Vite convention —
+# it cannot be changed by just restarting the container, only by rebuilding
+# the image with a different build arg). docker-compose.yml passes it in.
 
 FROM node:22-alpine AS build
 WORKDIR /app
+ARG VITE_API_URL=http://api.localhost/api
+ARG VITE_SEED_DEMO_PASSWORD=ChangeMe123!
+ARG VITE_SHOW_DEMO_LOGINS=true
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_SEED_DEMO_PASSWORD=$VITE_SEED_DEMO_PASSWORD
+ENV VITE_SHOW_DEMO_LOGINS=$VITE_SHOW_DEMO_LOGINS
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .

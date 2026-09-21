@@ -1,19 +1,20 @@
-import { useWarehouseStore } from '../store/useWarehouseStore'
+import { api } from '../lib/apiClient'
+import type { Driver, Transfer } from '../types'
 
 export const transferService = {
-  list() {
-    return useWarehouseStore.getState().transfers
+  list(): Promise<Transfer[]> {
+    return api.get<Transfer[]>('/transfers')
   },
-  listForBranch(branchId: string) {
-    return useWarehouseStore.getState().transfers.filter((t) => t.branchId === branchId)
+  get(id: string): Promise<Transfer> {
+    return api.get<Transfer>(`/transfers/${id}`)
   },
-  get(transferId: string) {
-    return useWarehouseStore.getState().transfers.find((t) => t.id === transferId)
+  getDrivers(): Promise<Driver[]> {
+    return api.get<Driver[]>('/users?role=DRIVER')
   },
-  getDrivers() {
-    return useWarehouseStore.getState().drivers
+  assignDriver(id: string, driverId: string): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${id}/assign-driver`, { driverId })
   },
-  assignDriver(transferId: string, driverId: string) {
-    useWarehouseStore.getState().assignDriver(transferId, driverId)
+  setEta(id: string, eta: { etaDate?: string; etaWindowStart?: string; etaWindowEnd?: string }): Promise<Transfer> {
+    return api.post<Transfer>(`/transfers/${id}/eta`, eta)
   },
 }

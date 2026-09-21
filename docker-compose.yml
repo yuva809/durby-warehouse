@@ -22,6 +22,17 @@ services:
   frontend:
     build:
       context: ./apps/web
+      args:
+        # Baked into the JS bundle at build time — see apps/web/Dockerfile.
+        # Defaults match the Caddyfile's local-dev domains; override in .env
+        # for a real deployment (e.g. https://api.warehouse.example.com/api).
+        VITE_API_URL: ${VITE_API_URL:-http://api.localhost/api}
+        # Dev/demo convenience only (Login page's quick-login list) — set to
+        # an empty/unused value for a real deployment; nothing else reads it.
+        VITE_SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-ChangeMe123!}
+        # Defaults on for local dev. MUST be set to "false" in .env before a
+        # real deployment — see DEPLOY.md's production checklist.
+        VITE_SHOW_DEMO_LOGINS: ${VITE_SHOW_DEMO_LOGINS:-true}
     restart: unless-stopped
     expose: ["80"]
     networks: [internal]
@@ -39,7 +50,7 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
-      CORS_ORIGIN: https://${FRONTEND_DOMAIN:-localhost}
+      CORS_ORIGIN: ${FRONTEND_URL:-http://localhost}
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +64,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    # Loopback-only (see postgres/redis notes below) — lets a standalone
+    # `npm run dev` frontend (hot reload, not through Caddy) reach the API
+    # directly at http://localhost:3000/api during development.
+    ports:
+      - "127.0.0.1:3000:3000"
 
   # Same image as `backend`, different entrypoint — see apps/api/src/worker.ts.
   # Deliberately one process for both queues rather than a second worker

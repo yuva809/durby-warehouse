@@ -4,15 +4,24 @@ import { Search, Package } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { ProductDrawer } from '../components/inventory/ProductDrawer'
-import { useWarehouseStore } from '../store/useWarehouseStore'
+import { useProducts, useLocations } from '../hooks/useCatalog'
+import { useInventory } from '../hooks/useInventory'
 import { STATUS_STYLES, formatCurrency, stockStatus } from '../lib/utils'
-import { WAREHOUSE_ID, BRANCH_IDS, type StockStatus } from '../types'
+import type { StockStatus } from '../types'
 
 export default function Products() {
-  const products = useWarehouseStore((s) => s.products)
-  const inventory = useWarehouseStore((s) => s.inventory)
+  const { data: products = [] } = useProducts()
+  const { data: locations = [] } = useLocations()
+  const { data: inventoryLines = [] } = useInventory()
   const [query, setQuery] = useState('')
   const [params, setParams] = useSearchParams()
+
+  const branches = locations.filter((l) => l.type === 'BRANCH')
+  const byLocationProduct = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const line of inventoryLines) map.set(`${line.locationId}:${line.productId}`, line.onHand)
+    return map
+  }, [inventoryLines])
 
   const filtered = useMemo(
     () => products.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()) || p.sku.toLowerCase().includes(query.toLowerCase())),
@@ -37,8 +46,8 @@ export default function Products() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filtered.map((p) => {
-          const total = [WAREHOUSE_ID, ...BRANCH_IDS].reduce((sum, loc) => sum + (inventory[loc]?.[p.id] ?? 0), 0)
-          const branchStatuses = BRANCH_IDS.map((b) => stockStatus(inventory[b]?.[p.id] ?? 0, p.minStock))
+          const total = locations.reduce((sum, l) => sum + (byLocationProduct.get(`${l.id}:${p.id}`) ?? 0), 0)
+          const branchStatuses = branches.map((b) => stockStatus(byLocationProduct.get(`${b.id}:${p.id}`) ?? 0, p.minStock))
           const worst: StockStatus = branchStatuses.includes('out') ? 'out' : branchStatuses.includes('low') ? 'low' : 'healthy'
           return (
             <button

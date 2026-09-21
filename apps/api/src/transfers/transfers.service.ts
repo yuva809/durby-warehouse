@@ -74,12 +74,25 @@ export class TransfersService {
   }
 
   async startPicking(id: string, user: AuthUser) {
-    const transfer = await this.prisma.transfer.findUniqueOrThrow({ where: { id } });
+    const transfer = await this.prisma.transfer.findUniqueOrThrow({ where: { id }, include: { items: true } });
     await this.assertAccess(user, transfer);
     if (transfer.status !== TransferStatus.ASSIGNED) {
       throw new ConflictException(`Cannot start picking a transfer in status ${transfer.status}`);
     }
-    const updated = await this.prisma.transfer.update({ where: { id }, data: { status: TransferStatus.PICKING } });
+    // Pre-fill each line with the approved (planned) quantity rather than
+    // leaving it blank — the driver is then editing only the lines that came
+    // up short, not re-typing every quantity from scratch. This is still
+    // just a starting value: setPickedQty can change it before dispatch()
+    // reads whatever is persisted at that moment as authoritative.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      for (const item of transfer.items) {
+        await tx.transferItem.update({
+          where: { transferId_productId: { transferId: id, productId: item.productId } },
+          data: { pickedQty: item.approvedQty },
+        });
+      }
+      return tx.transfer.update({ where: { id }, data: { status: TransferStatus.PICKING }, include: { items: true } });
+    });
     await this.activity.log(`Driver started picking for ${updated.code}`, 'delivery', user.userId);
     return updated;
   }

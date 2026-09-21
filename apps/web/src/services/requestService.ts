@@ -1,28 +1,29 @@
-import { useWarehouseStore } from '../store/useWarehouseStore'
+import { api } from '../lib/apiClient'
+import type { RequestStatus, StockRequest, Transfer } from '../types'
 
 export const requestService = {
-  list() {
-    return useWarehouseStore.getState().requests
+  list(status?: RequestStatus): Promise<StockRequest[]> {
+    return api.get<StockRequest[]>(`/requests${status ? `?status=${status}` : ''}`)
   },
-  listForBranch(branchId: string) {
-    return useWarehouseStore.getState().requests.filter((r) => r.branchId === branchId)
+  get(id: string): Promise<StockRequest> {
+    return api.get<StockRequest>(`/requests/${id}`)
   },
-  get(requestId: string) {
-    return useWarehouseStore.getState().requests.find((r) => r.id === requestId)
+  submit(items: { productId: string; requestedQty: number }[]): Promise<StockRequest> {
+    return api.post<StockRequest>('/requests', { items })
   },
-  submit(branchId: string, items: { productId: string; requestedQty: number }[]) {
-    return useWarehouseStore.getState().submitRequest(branchId, items)
+  markReviewing(id: string): Promise<StockRequest> {
+    return api.post<StockRequest>(`/requests/${id}/review`)
   },
-  markReviewing(requestId: string) {
-    useWarehouseStore.getState().markReviewing(requestId)
+  updateApprovedQty(id: string, productId: string, approvedQty: number): Promise<StockRequest> {
+    return api.patch<StockRequest>(`/requests/${id}/items`, { productId, approvedQty })
   },
-  updateApprovedQty(requestId: string, productId: string, qty: number) {
-    useWarehouseStore.getState().updateApprovedQty(requestId, productId, qty)
+  approve(id: string): Promise<Transfer> {
+    return api.post<Transfer>(`/requests/${id}/approve`)
   },
-  approve(requestId: string) {
-    return useWarehouseStore.getState().approveRequest(requestId)
+  reject(id: string, reason: string): Promise<StockRequest> {
+    return api.post<StockRequest>(`/requests/${id}/reject`, { reason })
   },
-  reject(requestId: string, reason: string) {
-    useWarehouseStore.getState().rejectRequest(requestId, reason)
+  cancel(id: string): Promise<StockRequest> {
+    return api.post<StockRequest>(`/requests/${id}/cancel`)
   },
 }

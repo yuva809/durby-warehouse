@@ -1,12 +1,28 @@
-export type LocationType = 'warehouse' | 'branch'
+// Types mirroring the NestJS API's response shapes (apps/api/prisma/schema.prisma).
+// IDs are real database cuids now, except Location/Product ids, which the
+// seed script deliberately kept identical to V1's slugs ('b1'..'b5',
+// 'warehouse', 'ponni_boiled_rice_224', ...) for continuity.
+
+export type Role = 'SUPER_ADMIN' | 'WAREHOUSE_MANAGER' | 'BRANCH_USER' | 'DRIVER'
+
+export interface AuthUser {
+  userId: string
+  email: string
+  name: string
+  role: Role
+  locationId: string | null
+}
+
+export type LocationType = 'WAREHOUSE' | 'BRANCH'
 
 export interface Location {
   id: string
   name: string
   type: LocationType
   /** Short label for chart axes / compact chips, e.g. "Wilhelm 2" */
-  shortName?: string
-  city?: string
+  shortName?: string | null
+  city?: string | null
+  active: boolean
 }
 
 export interface Product {
@@ -17,58 +33,89 @@ export interface Product {
   unit: string
   minStock: number
   unitPrice: number
-  brand?: string
+  brand?: string | null
   /** Pack/case size as sold, e.g. "12x1kg" */
-  pack?: string
-  expiryDate?: string
+  pack?: string | null
+  expiryDate?: string | null
   /**
    * Reference back to the customer's own source workbook row, kept for
    * traceability since the source has no standalone article/barcode field
    * for most categories. Demo-only convenience, not a real article number.
    */
-  sourceRef?: string
+  sourceRef?: string | null
+  active: boolean
 }
-
-/** locationId -> productId -> quantity */
-export type InventoryMap = Record<string, Record<string, number>>
 
 export type StockStatus = 'healthy' | 'low' | 'out'
 
-export type RequestStatus = 'pending' | 'reviewing' | 'approved' | 'rejected' | 'delivered'
+/** One row from GET /inventory — never sent to a BRANCH_USER. */
+export interface InventoryLine {
+  locationId: string
+  locationName: string
+  productId: string
+  productName: string
+  sku: string
+  unit: string
+  onHand: number
+  reserved: number
+  available: number
+}
+
+export type MovementType = 'RECEIPT' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'DAMAGE' | 'EXPIRED' | 'RECOUNT' | 'ADJUSTMENT' | 'RETURN'
+
+export interface InventoryMovement {
+  id: string
+  productId: string
+  product: Product
+  locationId: string
+  location: Location
+  quantity: number
+  type: MovementType
+  reference?: string | null
+  reason?: string | null
+  userId?: string | null
+  createdAt: string
+}
+
+export type RequestStatus = 'PENDING' | 'REVIEWING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'PARTIALLY_DELIVERED' | 'DELIVERED'
 
 export interface RequestItem {
+  id: string
   productId: string
+  product?: Product
   requestedQty: number
-  approvedQty?: number
+  approvedQty?: number | null
 }
 
 export interface StockRequest {
   id: string
+  /** Human-facing code, e.g. "REQ-1024" — use this for display, `id` for API calls. */
+  code: string
   branchId: string
-  items: RequestItem[]
+  branch?: Location
   status: RequestStatus
+  createdById: string
+  reviewedById?: string | null
+  reviewedAt?: string | null
+  rejectionReason?: string | null
+  cancelledAt?: string | null
   createdAt: string
-  reviewedAt?: string
-  rejectionReason?: string
+  items: RequestItem[]
+  transfer?: Transfer | null
 }
 
-export type TransferStatus = 'ready' | 'assigned' | 'picking' | 'out_for_delivery' | 'delivered'
+export type TransferStatus = 'READY' | 'ASSIGNED' | 'PICKING' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'PARTIALLY_DELIVERED' | 'FAILED'
 
 export interface TransferItem {
-  productId: string
-  qty: number
-  pickedQty?: number
-}
-
-export interface Transfer {
   id: string
-  requestId: string
-  branchId: string
-  items: TransferItem[]
-  status: TransferStatus
-  driverId?: string
-  createdAt: string
-  deliveredAt?: string
+  productId: string
+  product?: Product
+  /** Planned quantity, copied from the request's approvedQty at approval time. */
+  approvedQty: number
+  /** Actual picked quantity — authoritative for the stock movement at dispatch. */
+  pickedQty?: number | null
+  /** Actual delivered quantity — defaults to pickedQty, can be less if something didn't arrive. */
+  deliveredQty?: number | null
 }
 
 export interface Driver {
@@ -76,22 +123,36 @@ export interface Driver {
   name: string
 }
 
-export interface ActivityEvent {
+export interface Transfer {
   id: string
-  timestamp: string
-  message: string
-  kind: 'request' | 'review' | 'transfer' | 'delivery' | 'inventory' | 'system'
+  /** Human-facing code, e.g. "TR-1024". */
+  code: string
+  requestId: string
+  request?: StockRequest
+  branchId: string
+  branch?: Location
+  status: TransferStatus
+  driverId?: string | null
+  driver?: Driver | null
+  etaDate?: string | null
+  etaWindowStart?: string | null
+  etaWindowEnd?: string | null
+  outForDeliveryAt?: string | null
+  deliveredAt?: string | null
+  failedReason?: string | null
+  failedAt?: string | null
+  confirmedAt?: string | null
+  confirmedById?: string | null
+  createdAt: string
+  items: TransferItem[]
 }
 
-export type ViewerRole =
-  | 'overview'
-  | 'warehouse_manager'
-  | 'b1'
-  | 'b2'
-  | 'b3'
-  | 'b4'
-  | 'b5'
-  | 'delivery_person'
+export interface ActivityEvent {
+  id: string
+  message: string
+  kind: 'request' | 'review' | 'transfer' | 'delivery' | 'inventory' | 'system'
+  createdAt: string
+  user?: { name: string } | null
+}
 
 export const WAREHOUSE_ID = 'warehouse'
-export const BRANCH_IDS = ['b1', 'b2', 'b3', 'b4', 'b5'] as const

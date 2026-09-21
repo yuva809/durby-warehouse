@@ -7,7 +7,10 @@ import { StatCard } from '../components/ui/StatCard'
 import { RequestStatusBadge } from '../components/ui/StatusBadge'
 import { ProductDrawer } from '../components/inventory/ProductDrawer'
 import { RequestDrawer } from '../components/requests/RequestDrawer'
-import { useWarehouseStore } from '../store/useWarehouseStore'
+import { useProducts, useLocations } from '../hooks/useCatalog'
+import { useInventory } from '../hooks/useInventory'
+import { useRequests } from '../hooks/useRequests'
+import { useTransfers } from '../hooks/useTransfers'
 import { computeBranchStats } from '../lib/branchStats'
 import { BRANCH_HEALTH_STYLES, STATUS_STYLES, formatCurrency, formatDateTime, stockStatus } from '../lib/utils'
 import { Package, AlertTriangle, ClipboardList, Truck } from 'lucide-react'
@@ -15,20 +18,21 @@ import { Package, AlertTriangle, ClipboardList, Truck } from 'lucide-react'
 export default function BranchDetail() {
   const { branchId = '' } = useParams()
   const navigate = useNavigate()
-  const products = useWarehouseStore((s) => s.products)
-  const locations = useWarehouseStore((s) => s.locations)
-  const inventory = useWarehouseStore((s) => s.inventory)
-  const requests = useWarehouseStore((s) => s.requests)
-  const transfers = useWarehouseStore((s) => s.transfers)
+  const { data: products = [] } = useProducts()
+  const { data: locations = [] } = useLocations()
+  const { data: inventoryLines = [] } = useInventory()
+  const { data: requests = [] } = useRequests()
+  const { data: transfers = [] } = useTransfers()
   const [params, setParams] = useSearchParams()
   const [openRequest, setOpenRequest] = useState<string | null>(null)
 
   const branch = locations.find((l) => l.id === branchId)
   if (!branch) return <EmptyBranch onBack={() => navigate('/branches')} />
 
-  const stats = computeBranchStats(branchId, products, inventory, requests, transfers)
+  const stats = computeBranchStats(branchId, products, inventoryLines, requests, transfers)
   const style = BRANCH_HEALTH_STYLES[stats.health]
   const branchRequests = requests.filter((r) => r.branchId === branchId).slice(0, 6)
+  const byProduct = new Map(inventoryLines.filter((l) => l.locationId === branchId).map((l) => [l.productId, l.onHand]))
   const openProduct = params.get('product')
 
   return (
@@ -58,7 +62,7 @@ export default function BranchDetail() {
         </div>
         <div className="divide-y divide-ink-50">
           {products.map((p) => {
-            const qty = inventory[branchId]?.[p.id] ?? 0
+            const qty = byProduct.get(p.id) ?? 0
             const status = stockStatus(qty, p.minStock)
             const s = STATUS_STYLES[status]
             return (
@@ -93,7 +97,7 @@ export default function BranchDetail() {
               className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-brand-50/40 cursor-pointer"
             >
               <div>
-                <div className="text-sm font-semibold text-ink-800">{r.id}</div>
+                <div className="text-sm font-semibold text-ink-800">{r.code}</div>
                 <div className="text-xs text-ink-400">{r.items.length} products · {formatDateTime(r.createdAt)}</div>
               </div>
               <RequestStatusBadge status={r.status} />

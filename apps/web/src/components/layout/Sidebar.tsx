@@ -13,28 +13,29 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { LogoMark } from './LogoMark'
-import { useWarehouseStore } from '../../store/useWarehouseStore'
-import { branchIdForRole } from '../../lib/viewRoles'
+import { useAuthStore } from '../../auth/authStore'
+import type { Role } from '../../types'
 
-// A branch's job is request -> track -> receive, not inventory management —
-// each item opts into branch visibility rather than being cross-referenced
-// against a separate list, so a new item defaults to manager/overview-only.
-const NAV = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, branchVisible: true },
-  { to: '/inventory', label: 'Inventory', icon: Boxes },
-  { to: '/products', label: 'Products', icon: Package },
-  { to: '/branches', label: 'Branches', icon: Store },
-  { to: '/requests', label: 'Stock Requests', icon: ClipboardList, branchVisible: true },
-  { to: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
-  { to: '/deliveries', label: 'Deliveries', icon: Truck },
-  { to: '/activity', label: 'Activity', icon: Activity },
-  { to: '/roadmap', label: 'Roadmap', icon: Map, branchVisible: true },
+// Every item opts into which roles can see it (undefined = everyone) rather
+// than being cross-referenced against a separate allowlist, so a new item
+// defaults to manager/admin-only until someone deliberately widens it —
+// this is just the frontend's nav; the backend enforces the real access
+// control regardless of what's shown here (see apps/api's RolesGuard).
+const NAV: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean; roles?: Role[] }[] = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/products', label: 'Products', icon: Package, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/branches', label: 'Branches', icon: Store, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/requests', label: 'Stock Requests', icon: ClipboardList, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER', 'BRANCH_USER'] },
+  { to: '/transfers', label: 'Transfers', icon: ArrowLeftRight, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/deliveries', label: 'Deliveries', icon: Truck, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER', 'DRIVER'] },
+  { to: '/activity', label: 'Activity', icon: Activity, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/roadmap', label: 'Roadmap', icon: Map },
 ]
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const view = useWarehouseStore((s) => s.view)
-  const isBranch = !!branchIdForRole(view)
-  const navItems = isBranch ? NAV.filter((item) => item.branchVisible) : NAV
+  const user = useAuthStore((s) => s.user)
+  const navItems = NAV.filter((item) => !item.roles || (user && item.roles.includes(user.role)))
 
   return (
     <>
@@ -94,9 +95,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </nav>
 
         <div className="mx-3 mb-4 shrink-0 rounded-xl bg-white/5 px-4 py-3.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-300">V1 Prototype</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-300">V2</div>
           <p className="mt-1 text-xs leading-relaxed text-ink-400">
-            Live demo of the Durby Warehouse concept. Data resets from the Reset Demo control.
+            Backed by the real Durby Warehouse API — inventory, requests, and
+            deliveries are now live in PostgreSQL.
           </p>
         </div>
       </aside>

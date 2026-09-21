@@ -6,11 +6,14 @@ import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { RequestStatusBadge } from '../ui/StatusBadge'
 import { Timeline } from '../ui/Timeline'
-import { useWarehouseStore } from '../../store/useWarehouseStore'
-import { requestService } from '../../services/requestService'
+import { useAuthStore } from '../../auth/authStore'
+import { isBranchUser, isManager as checkIsManager } from '../../auth/roles'
+import { useRequest, useMarkReviewing, useUpdateApprovedQty, useApproveRequest, useRejectRequest, useCancelRequest } from '../../hooks/useRequests'
+import { useInventory } from '../../hooks/useInventory'
 import { cn, formatDateTime } from '../../lib/utils'
 import { computeRequestTimeline } from '../../lib/requestTimeline'
 import { WAREHOUSE_ID } from '../../types'
+import { ApiError } from '../../lib/apiClient'
 
 export function RequestDrawer({
   requestId,
@@ -21,79 +24,105 @@ export function RequestDrawer({
   onClose: () => void
   onViewTransfer?: (transferId: string) => void
 }) {
-  const view = useWarehouseStore((s) => s.view)
-  const request = useWarehouseStore((s) => s.requests.find((r) => r.id === requestId))
-  const products = useWarehouseStore((s) => s.products)
-  const inventory = useWarehouseStore((s) => s.inventory)
-  const locations = useWarehouseStore((s) => s.locations)
-  const transfers = useWarehouseStore((s) => s.transfers)
+  const user = useAuthStore((s) => s.user)
+  const isManager = checkIsManager(user)
 
-  const isManager = view === 'warehouse_manager' || view === 'overview'
+  const { data: request } = useRequest(requestId)
+  const markReviewing = useMarkReviewing()
+  const updateApprovedQty = useUpdateApprovedQty()
+  const approveRequest = useApproveRequest()
+  const rejectRequest = useRejectRequest()
+  const cancelRequest = useCancelRequest()
+
+  const canReview = isManager && (request?.status === 'PENDING' || request?.status === 'REVIEWING')
+  const canCancel = isBranchUser(user) && (request?.status === 'PENDING' || request?.status === 'REVIEWING')
+  const { data: warehouseInventory } = useInventory(WAREHOUSE_ID)
+  const available = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const line of warehouseInventory ?? []) map.set(line.productId, line.available)
+    return map
+  }, [warehouseInventory])
+
   const [confirming, setConfirming] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
-  const [justApprovedTransfer, setJustApprovedTransfer] = useState<string | null>(null)
+  const [justApprovedTransferCode, setJustApprovedTransferCode] = useState<string | null>(null)
+  const [justApprovedTransferId, setJustApprovedTransferId] = useState<string | null>(null)
+  const [draftApproved, setDraftApproved] = useState<Record<string, number>>({})
 
   useEffect(() => {
     setConfirming(false)
     setRejecting(false)
     setReason('')
-    setJustApprovedTransfer(null)
+    setJustApprovedTransferCode(null)
+    setJustApprovedTransferId(null)
+    setDraftApproved({})
   }, [requestId])
 
   useEffect(() => {
-    if (request && isManager && request.status === 'pending') {
-      requestService.markReviewing(request.id)
+    if (request && isManager && request.status === 'PENDING') {
+      markReviewing.mutate(request.id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.id])
 
-  const branchName = locations.find((l) => l.id === request?.branchId)?.name ?? ''
-  const linkedTransfer = transfers.find((t) => t.requestId === request?.id)
-
   const rows = useMemo(() => {
     if (!request) return []
     return request.items.map((item) => {
-      const product = products.find((p) => p.id === item.productId)!
-      const available = inventory[WAREHOUSE_ID]?.[item.productId] ?? 0
-      const approved = item.approvedQty ?? item.requestedQty
-      return { item, product, available, approved, sufficient: available >= item.requestedQty }
+      const approved = draftApproved[item.productId] ?? item.approvedQty ?? item.requestedQty
+      const stock = available.get(item.productId) ?? 0
+      return { item, product: item.product!, available: stock, approved, sufficient: stock >= item.requestedQty }
     })
-  }, [request, products, inventory])
+  }, [request, draftApproved, available])
 
-  const canReview = isManager && (request?.status === 'pending' || request?.status === 'reviewing')
-
-  function updateQty(productId: string, qty: number) {
+  function persistQtyIfChanged(productId: string, qty: number) {
     if (!request) return
-    requestService.updateApprovedQty(request.id, productId, Math.max(0, qty))
+    const onServer = request.items.find((i) => i.productId === productId)?.approvedQty ?? request.items.find((i) => i.productId === productId)?.requestedQty
+    if (qty !== onServer) {
+      updateApprovedQty.mutate({ id: request.id, productId, approvedQty: qty })
+    }
   }
 
-  function handleApprove() {
+  async function handleApprove() {
     if (!request) return
-    const transferId = requestService.approve(request.id)
-    if (transferId) setJustApprovedTransfer(transferId)
+    // Flush any edited-but-not-yet-blurred quantities before approving.
+    await Promise.all(
+      Object.entries(draftApproved).map(([productId, qty]) => {
+        const onServer = request.items.find((i) => i.productId === productId)?.approvedQty ?? request.items.find((i) => i.productId === productId)?.requestedQty
+        return qty !== onServer ? updateApprovedQty.mutateAsync({ id: request.id, productId, approvedQty: qty }) : Promise.resolve()
+      }),
+    )
+    try {
+      const transfer = await approveRequest.mutateAsync(request.id)
+      setJustApprovedTransferCode(transfer.code)
+      setJustApprovedTransferId(transfer.id)
+    } catch {
+      // ApiError already surfaced via approveRequest.error below
+    }
     setConfirming(false)
   }
 
   function handleReject() {
     if (!request || !reason.trim()) return
-    requestService.reject(request.id, reason.trim())
-    setRejecting(false)
+    rejectRequest.mutate({ id: request.id, reason: reason.trim() }, { onSuccess: () => setRejecting(false) })
   }
 
   if (!request) return null
+
+  const branchName = request.branch?.name ?? ''
+  const linkedTransfer = request.transfer
 
   return (
     <>
       <Drawer
         open={!!requestId}
         onClose={onClose}
-        title={request.id}
+        title={request.code}
         subtitle={`${branchName} · ${formatDateTime(request.createdAt)}`}
         footer={
-          justApprovedTransfer ? (
-            <Button className="w-full" onClick={() => { onViewTransfer?.(justApprovedTransfer); onClose() }}>
-              View Transfer {justApprovedTransfer}
+          justApprovedTransferId ? (
+            <Button className="w-full" onClick={() => { onViewTransfer?.(justApprovedTransferId); onClose() }}>
+              View Transfer {justApprovedTransferCode}
             </Button>
           ) : canReview ? (
             rejecting ? (
@@ -110,7 +139,7 @@ export function RequestDrawer({
                   <Button variant="outline" className="flex-1" onClick={() => setRejecting(false)}>
                     Cancel
                   </Button>
-                  <Button variant="danger" className="flex-1" disabled={!reason.trim()} onClick={handleReject}>
+                  <Button variant="danger" className="flex-1" disabled={!reason.trim() || rejectRequest.isPending} onClick={handleReject}>
                     Confirm Rejection
                   </Button>
                 </div>
@@ -125,14 +154,27 @@ export function RequestDrawer({
                 </Button>
               </div>
             )
-          ) : request.status === 'rejected' ? (
+          ) : canCancel ? (
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={cancelRequest.isPending}
+              onClick={() => cancelRequest.mutate(request.id)}
+            >
+              <XCircle size={15} /> {cancelRequest.isPending ? 'Cancelling…' : 'Cancel Request'}
+            </Button>
+          ) : request.status === 'REJECTED' ? (
             <div className="rounded-lg bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700">
               <span className="font-medium">Rejected: </span>
               {request.rejectionReason}
             </div>
+          ) : request.status === 'CANCELLED' ? (
+            <div className="rounded-lg bg-ink-100 px-3.5 py-2.5 text-center text-sm text-ink-500">
+              This request was cancelled.
+            </div>
           ) : linkedTransfer ? (
             <Button variant="outline" className="w-full" onClick={() => { onViewTransfer?.(linkedTransfer.id); onClose() }}>
-              View Transfer {linkedTransfer.id}
+              View Transfer {linkedTransfer.code}
             </Button>
           ) : null
         }
@@ -148,7 +190,7 @@ export function RequestDrawer({
         </div>
 
         <div className="space-y-3">
-          {rows.map(({ item, product, available, approved, sufficient }) => (
+          {rows.map(({ item, product, available: stock, approved, sufficient }) => (
             <div key={item.productId} className="rounded-xl ring-1 ring-ink-200/70 p-3.5">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-ink-900">{product.name}</span>
@@ -165,7 +207,7 @@ export function RequestDrawer({
                 {isManager && (
                   <div>
                     <div className="text-ink-400">Warehouse</div>
-                    <div className="font-semibold text-ink-700 tabular-nums">{available} {product.unit}</div>
+                    <div className="font-semibold text-ink-700 tabular-nums">{stock} {product.unit}</div>
                   </div>
                 )}
                 <div>
@@ -179,7 +221,8 @@ export function RequestDrawer({
                       type="number"
                       min={0}
                       value={approved}
-                      onChange={(e) => updateQty(item.productId, Number(e.target.value))}
+                      onChange={(e) => setDraftApproved((s) => ({ ...s, [item.productId]: Math.max(0, Number(e.target.value)) }))}
+                      onBlur={(e) => persistQtyIfChanged(item.productId, Math.max(0, Number(e.target.value)))}
                       className={cn(
                         'w-full rounded-md bg-ink-50 px-2 py-1 text-sm font-semibold tabular-nums outline-none ring-1 ring-inset focus:ring-brand-400',
                         approved !== item.requestedQty ? 'ring-amber-300 text-amber-700' : 'ring-ink-200 text-ink-700',
@@ -187,7 +230,7 @@ export function RequestDrawer({
                     />
                   ) : (
                     <div className="font-semibold tabular-nums text-ink-700">
-                      {item.approvedQty ?? '—'} {item.approvedQty !== undefined ? product.unit : ''}
+                      {item.approvedQty ?? '—'} {item.approvedQty !== undefined && item.approvedQty !== null ? product.unit : ''}
                     </div>
                   )}
                 </div>
@@ -224,23 +267,30 @@ export function RequestDrawer({
               Warehouse stock after transfer
             </div>
             <div className="space-y-1.5">
-              {rows.map(({ item, product, available, approved }) => (
+              {rows.map(({ item, product, available: stock, approved }) => (
                 <div key={item.productId} className="flex items-center justify-between text-sm">
                   <span className="text-ink-600">{product.name}</span>
                   <span className="font-semibold tabular-nums text-ink-900">
-                    {available} → {Math.max(0, available - approved)} {product.unit}
+                    {stock} → {Math.max(0, stock - approved)} {product.unit}
                   </span>
                 </div>
               ))}
             </div>
           </div>
 
+          {approveRequest.isError && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              <AlertTriangle size={14} className="shrink-0" />
+              {approveRequest.error instanceof ApiError ? approveRequest.error.message : 'Could not approve this request'}
+            </div>
+          )}
+
           <div className="mt-5 flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setConfirming(false)}>
               Cancel
             </Button>
-            <Button className="flex-1" onClick={handleApprove}>
-              Confirm Transfer
+            <Button className="flex-1" disabled={approveRequest.isPending} onClick={handleApprove}>
+              {approveRequest.isPending ? 'Confirming…' : 'Confirm Transfer'}
             </Button>
           </div>
         </div>

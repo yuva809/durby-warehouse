@@ -4,6 +4,11 @@ Single Hetzner CPX22 VPS, everything in Docker Compose:
 `reverse-proxy` (Caddy) → `frontend` / `backend` → `postgres`, `redis`, `worker`.
 No Kubernetes, no managed cloud services required.
 
+> **Current phase: local development only.** Sections 2–4 (Hetzner) are here
+> for when we're ready, but are *not* the current priority — see the project
+> status report. Build, run, and test everything locally first with the same
+> Docker Compose stack; only the domain/DNS/TLS pieces differ for the VPS.
+
 ## 1. Local development
 
 ```bash
@@ -17,7 +22,23 @@ Frontend: http://localhost — API: http://api.localhost/api — Health: http://
 
 (macOS/Linux resolve `*.localhost` to 127.0.0.1 automatically. On Windows, add `127.0.0.1 api.localhost` to your hosts file if it doesn't.)
 
-## 2. Provision the Hetzner CPX22
+Log in with any seeded account (see `apps/api/prisma/seed.ts`) — the Login page also shows a "Demo accounts" quick-login list in dev (gated by `VITE_SHOW_DEMO_LOGINS`, on by default locally — **must be turned off before any real deployment**, see the checklist below).
+
+Run the full scenario check against the running stack:
+```bash
+node scripts/e2e-smoke-test.mjs
+```
+
+### Standalone frontend dev (hot reload)
+
+```bash
+docker compose up -d backend postgres redis worker   # everything except frontend/proxy
+cd apps/web && cp .env.example .env.local && npm run dev
+```
+
+---
+
+## 2. Provision the Hetzner CPX22 — LATER, not now
 
 1. Create a CPX22 (2 vCPU / 4 GB RAM / 40 GB disk is enough to start) — Ubuntu 24.04 image.
 2. Point DNS: `A` records for your two domains (e.g. `warehouse.example.com` and `api.warehouse.example.com`) → the server's IP. Caddy needs both resolving *before* it can issue certificates.
@@ -31,7 +52,7 @@ Frontend: http://localhost — API: http://api.localhost/api — Health: http://
    ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable
    ```
 
-## 3. Deploy
+## 3. Deploy — LATER, not now
 
 ```bash
 git clone https://github.com/<you>/durby-warehouse.git
@@ -39,10 +60,11 @@ cd durby-warehouse
 cp .env.example .env
 ```
 
-Edit `.env`:
-- `FRONTEND_DOMAIN` / `API_DOMAIN` → your real domains from step 2.
-- `POSTGRES_PASSWORD`, `JWT_SECRET` → generate real random values (`openssl rand -base64 48`), never the example placeholders.
-- `SEED_DEMO_PASSWORD` → set something you'll actually use, or leave default and change it immediately after first login (see step 6 — there's no "change password" UI yet, so for a real deployment either seed with the password you intend to keep, or reset it directly in the DB).
+Edit `.env` — production checklist:
+- [ ] `FRONTEND_DOMAIN` / `API_DOMAIN` / `VITE_API_URL` / `FRONTEND_URL` → your real domains from step 2.
+- [ ] `POSTGRES_PASSWORD`, `JWT_SECRET` → generate real random values (`openssl rand -base64 48`), never the example placeholders.
+- [ ] `VITE_SHOW_DEMO_LOGINS=false` — **do not ship the quick-login account list to a real deployment.**
+- [ ] `SEED_DEMO_PASSWORD` → set something you'll actually use, or leave default and change it immediately after first login (there's no "change password" UI yet, so for a real deployment either seed with the password you intend to keep, or reset it directly in the DB).
 
 ```bash
 docker compose up -d --build
@@ -50,7 +72,7 @@ docker compose exec backend npx prisma migrate deploy
 docker compose exec backend npm run seed
 ```
 
-## 4. Verify
+## 4. Verify — LATER, not now
 
 ```bash
 curl https://api.warehouse.example.com/api/health
@@ -67,7 +89,7 @@ If a domain doesn't get a certificate, check `docker compose logs reverse-proxy`
 The seed script already creates `admin@durby.tech` (`SUPER_ADMIN`) with the password from `SEED_DEMO_PASSWORD`:
 
 ```bash
-curl -X POST https://api.warehouse.example.com/api/auth/login \
+curl -X POST http://api.localhost/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@durby.tech","password":"<your SEED_DEMO_PASSWORD>"}'
 ```
@@ -76,12 +98,13 @@ That returns a JWT you can use to create real users via `POST /api/users` (see t
 
 ## 6. Back up and restore Postgres
 
+Works the same locally or on the VPS:
 ```bash
 ./scripts/backup-db.sh                      # writes ./backups/durby-warehouse-<timestamp>.sql.gz, keeps last 14
 ./scripts/restore-db.sh ./backups/durby-warehouse-<timestamp>.sql.gz
 ```
 
-Put the backup on a cron (daily is reasonable at this scale):
+On the VPS, put the backup on a cron (daily is reasonable at this scale):
 ```
 0 3 * * * cd /path/to/durby-warehouse && ./scripts/backup-db.sh >> /var/log/durby-backup.log 2>&1
 ```
@@ -100,6 +123,7 @@ docker compose exec backend npx prisma migrate deploy
 
 ## Known limitations (be aware of these before relying on this in production)
 
-- **Frontend is not yet wired to this backend.** The `frontend` container serves the working V1 UI (Zustand + localStorage) — it's the right container shape and builds/serves correctly, but its service layer still hasn't been repointed at these API endpoints. See the project status report for what that involves.
 - **No password reset / user-management UI.** Users are created via the API directly (`POST /api/users`) or the seed script; there's no frontend for it yet.
-- **Concurrency and the full workflow have not been run against a live database in this environment** (no Docker/Postgres was available in the sandbox this was built in) — the logic was built and reasoned through carefully (see the status report), but `scripts/e2e-smoke-test.mjs` needs to actually be run here, on a real deployment, before you trust it in front of a customer.
+- **The Login page's demo-account quick-login list must be disabled** (`VITE_SHOW_DEMO_LOGINS=false`) before any real deployment — see the production checklist above.
+- **Nothing here has been run against a live database in this environment yet** (no Docker/Postgres was available in the sandbox this was built in) — the logic was built and reasoned through carefully (see the status report), but `docker compose up` + `scripts/e2e-smoke-test.mjs` need to actually be run, here, before this is trusted in front of a customer. This is the very next step.
+- **Manager-only actions poll rather than push.** Query results are cached for ~15s (TanStack Query `staleTime`); two managers acting on the same request at the same time will each see the truth on their next fetch/navigation, not instantly via a live socket. The backend's locking is what actually prevents double-approval (see status report) — this is purely a "how fast does the screen refresh" note, not a correctness gap.

@@ -1,41 +1,54 @@
-import { useWarehouseStore } from '../store/useWarehouseStore'
-import { WAREHOUSE_ID } from '../types'
-import { stockStatus } from '../lib/utils'
+import { api } from '../lib/apiClient'
+import type { InventoryLine, InventoryMovement, Location, Product } from '../types'
+
+interface Page<T> {
+  total: number
+  page: number
+  pageSize: number
+  items: T[]
+}
+
+function normalizeProduct(p: Product): Product {
+  // Prisma's Decimal serializes to a string over JSON — coerce back to number
+  // once, here, so every caller downstream can keep treating unitPrice as a
+  // plain number, same as V1.
+  return { ...p, unitPrice: Number(p.unitPrice) }
+}
 
 /**
- * Thin façade over the demo store. Every method here reads today from local/mock
- * state; when Durby Warehouse gets a real backend, these signatures stay the
- * same and only the implementation swaps to fetch/axios calls.
+ * API client for the product/location catalog and (manager-only) inventory
+ * levels. Same method names as V1's local-store version — only the
+ * implementation changed, from a Zustand read to a real HTTP call.
  */
 export const inventoryService = {
-  getProducts() {
-    return useWarehouseStore.getState().products
+  async getProducts(): Promise<Product[]> {
+    const products = await api.get<Product[]>('/products')
+    return products.map(normalizeProduct)
   },
-  getProduct(productId: string) {
-    return useWarehouseStore.getState().products.find((p) => p.id === productId)
+
+  async getProduct(productId: string): Promise<Product> {
+    const product = await api.get<Product>(`/products/${productId}`)
+    return normalizeProduct(product)
   },
-  getLocations() {
-    return useWarehouseStore.getState().locations
+
+  getLocations(): Promise<Location[]> {
+    return api.get<Location[]>('/locations')
   },
-  getBranches() {
-    return useWarehouseStore.getState().locations.filter((l) => l.type === 'branch')
+
+  /** Manager/admin only — the API returns 403 for any other role. */
+  async getInventory(locationId?: string): Promise<InventoryLine[]> {
+    const query = locationId ? `?locationId=${locationId}&pageSize=200` : '?pageSize=200'
+    const page = await api.get<Page<InventoryLine>>(`/inventory${query}`)
+    return page.items
   },
-  getWarehouse() {
-    return useWarehouseStore.getState().locations.find((l) => l.id === WAREHOUSE_ID)!
+
+  async getMovements(params: { productId?: string; locationId?: string } = {}): Promise<InventoryMovement[]> {
+    const search = new URLSearchParams(params as Record<string, string>).toString()
+    const page = await api.get<Page<InventoryMovement>>(`/inventory/movements${search ? `?${search}` : ''}`)
+    return page.items
   },
-  getStock(locationId: string, productId: string) {
-    return useWarehouseStore.getState().inventory[locationId]?.[productId] ?? 0
-  },
-  getInventoryForLocation(locationId: string) {
-    return useWarehouseStore.getState().inventory[locationId] ?? {}
-  },
-  getStatus(locationId: string, productId: string) {
-    const qty = this.getStock(locationId, productId)
-    const product = this.getProduct(productId)
-    return stockStatus(qty, product?.minStock ?? 0)
-  },
-  getWarehouseValue() {
-    const state = useWarehouseStore.getState()
-    return state.products.reduce((sum, p) => sum + (state.inventory[WAREHOUSE_ID]?.[p.id] ?? 0) * p.unitPrice, 0)
+
+  createAdjustment(input: { locationId: string; productId: string; quantity: number; reason: string; note?: string }) {
+    return api.post('/inventory/adjustments', input)
   },
 }

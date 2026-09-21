@@ -1,6 +1,8 @@
 import { Drawer } from '../ui/Drawer'
 import { Badge } from '../ui/Badge'
-import { useWarehouseStore } from '../../store/useWarehouseStore'
+import { useProduct, useLocations } from '../../hooks/useCatalog'
+import { useInventory } from '../../hooks/useInventory'
+import { useActivity } from '../../hooks/useActivity'
 import { STATUS_STYLES, formatCurrency, formatTime, stockStatus } from '../../lib/utils'
 import { WAREHOUSE_ID } from '../../types'
 import { Clock, CalendarClock } from 'lucide-react'
@@ -11,14 +13,15 @@ function formatExpiry(iso: string) {
 }
 
 export function ProductDrawer({ productId, onClose }: { productId: string | null; onClose: () => void }) {
-  const product = useWarehouseStore((s) => s.products.find((p) => p.id === productId))
-  const locations = useWarehouseStore((s) => s.locations)
-  const inventory = useWarehouseStore((s) => s.inventory)
-  const activity = useWarehouseStore((s) => s.activity)
+  const { data: product } = useProduct(productId)
+  const { data: locations = [] } = useLocations()
+  const { data: inventoryLines = [] } = useInventory()
+  const { data: activity = [] } = useActivity()
 
   if (!product) return null
 
-  const totalQty = locations.reduce((sum, l) => sum + (inventory[l.id]?.[product.id] ?? 0), 0)
+  const byLocation = new Map(inventoryLines.filter((l) => l.productId === product.id).map((l) => [l.locationId, l.onHand]))
+  const totalQty = locations.reduce((sum, l) => sum + (byLocation.get(l.id) ?? 0), 0)
   const relatedActivity = activity.filter((a) => a.message.includes(product.name)).slice(0, 8)
 
   const daysToExpiry = product.expiryDate
@@ -70,7 +73,7 @@ export function ProductDrawer({ productId, onClose }: { productId: string | null
       </div>
       <div className="mt-2 divide-y divide-ink-100 overflow-hidden rounded-xl ring-1 ring-ink-200/70">
         {locations.map((loc) => {
-          const qty = inventory[loc.id]?.[product.id] ?? 0
+          const qty = byLocation.get(loc.id) ?? 0
           const status = loc.id === WAREHOUSE_ID ? 'healthy' : stockStatus(qty, product.minStock)
           const style = STATUS_STYLES[status]
           return (
@@ -101,7 +104,7 @@ export function ProductDrawer({ productId, onClose }: { productId: string | null
             </div>
             <div>
               <p className="text-ink-700">{a.message}</p>
-              <p className="text-xs text-ink-400">{formatTime(a.timestamp)}</p>
+              <p className="text-xs text-ink-400">{formatTime(a.createdAt)}</p>
             </div>
           </div>
         ))}

@@ -3,25 +3,27 @@ import { useNavigate } from 'react-router-dom'
 import { Package, AlertTriangle, ClipboardList, Truck, ChevronRight } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
-import { useWarehouseStore } from '../store/useWarehouseStore'
+import { useProducts, useLocations } from '../hooks/useCatalog'
+import { useInventory } from '../hooks/useInventory'
+import { useRequests } from '../hooks/useRequests'
+import { useTransfers } from '../hooks/useTransfers'
 import { computeBranchStats } from '../lib/branchStats'
 import { BRANCH_HEALTH_STYLES, formatCurrency } from '../lib/utils'
-import { BRANCH_IDS } from '../types'
 
 export default function Branches() {
-  const products = useWarehouseStore((s) => s.products)
-  const locations = useWarehouseStore((s) => s.locations)
-  const inventory = useWarehouseStore((s) => s.inventory)
-  const requests = useWarehouseStore((s) => s.requests)
-  const transfers = useWarehouseStore((s) => s.transfers)
+  const { data: products = [] } = useProducts()
+  const { data: locations = [] } = useLocations()
+  const { data: inventoryLines = [] } = useInventory()
+  const { data: requests = [] } = useRequests()
+  const { data: transfers = [] } = useTransfers()
   const navigate = useNavigate()
 
-  const branches = locations.filter((l) => BRANCH_IDS.includes(l.id as (typeof BRANCH_IDS)[number]))
+  const branches = locations.filter((l) => l.type === 'BRANCH')
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {branches.map((b) => {
-        const stats = computeBranchStats(b.id, products, inventory, requests, transfers)
+        const stats = computeBranchStats(b.id, products, inventoryLines, requests, transfers)
         const style = BRANCH_HEALTH_STYLES[stats.health]
         return (
           <button key={b.id} onClick={() => navigate(`/branches/${b.id}`)} className="text-left">

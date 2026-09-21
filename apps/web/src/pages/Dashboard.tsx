@@ -1,14 +1,13 @@
 import { WarehouseDashboard } from '../components/dashboard/WarehouseDashboard'
 import { BranchDashboard } from '../components/dashboard/BranchDashboard'
 import Deliveries from './Deliveries'
-import { useWarehouseStore } from '../store/useWarehouseStore'
-import { branchIdForRole } from '../lib/viewRoles'
+import { useAuthStore } from '../auth/authStore'
+import { isBranchUser, isDriver } from '../auth/roles'
 
 export default function Dashboard() {
-  const view = useWarehouseStore((s) => s.view)
-  const branchId = branchIdForRole(view)
+  const user = useAuthStore((s) => s.user)
 
-  if (branchId) return <BranchDashboard branchId={branchId} />
-  if (view === 'delivery_person') return <Deliveries />
+  if (user && isBranchUser(user) && user.locationId) return <BranchDashboard branchId={user.locationId} />
+  if (user && isDriver(user)) return <Deliveries />
   return <WarehouseDashboard />
 }
