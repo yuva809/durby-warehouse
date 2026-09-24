@@ -12,8 +12,11 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-localhost}
-      API_DOMAIN: ${API_DOMAIN:-api.localhost}
+      # Bare domain (no scheme) for production -> Caddy auto-provisions a
+      # real Let's Encrypt cert. Defaults include "http://" explicitly so
+      # local dev serves plain HTTP with no TLS at all (see infra/Caddyfile).
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-http://localhost}
+      API_DOMAIN: ${API_DOMAIN:-http://api.localhost}
     depends_on:
       - frontend
       - backend
@@ -47,15 +50,20 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev-only-redis-password}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
       CORS_ORIGIN: ${FRONTEND_URL:-http://localhost}
+      # Docker service discovery, not a hardcoded host/IP — see
+      # apps/api/src/supplier-invoices/ocr-client.service.ts.
+      OCR_SERVICE_URL: ${OCR_SERVICE_URL:-http://ocr:8000}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ocr:
+        condition: service_started
     expose: ["3000"]
     networks: [internal]
     healthcheck:
@@ -66,9 +74,13 @@ services:
       start_period: 20s
     # Loopback-only (see postgres/redis notes below) — lets a standalone
     # `npm run dev` frontend (hot reload, not through Caddy) reach the API
-    # directly at http://localhost:3000/api during development.
+    # directly during development. Host side mapped to 3001, not 3000,
+    # since 3000 is a very common dev-server port that's often already
+    # taken by an unrelated project on the same machine; the container
+    # still listens on 3000 internally (Caddy reaches it as `backend:3000`,
+    # unaffected by this host-side choice).
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3000"
 
   # Same image as `backend`, different entrypoint — see apps/api/src/worker.ts.
   # Deliberately one process for both queues rather than a second worker
@@ -83,13 +95,46 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev-only-redis-password}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks: [internal]
+
+  # PaddleOCR fallback for scanned/image-only supplier invoice PDFs (see
+  # apps/api/src/supplier-invoices/parsers/pdf.parser.ts, which only ever
+  # calls this when pdf-parse's own text layer is insufficient). A separate
+  # Python service, not a NestJS module, because PaddleOCR/PaddlePaddle are
+  # Python-only — this is the one place in the stack where that's true.
+  # Internal-only: no public `ports:`, reachable from backend/worker purely
+  # via Docker service discovery (OCR_SERVICE_URL=http://ocr:8000).
+  ocr:
+    build:
+      context: ./apps/ocr
+    # PaddlePaddle's CPU inference genuinely crashes (SIGSEGV, confirmed by
+    # actually running it — not assumed) on native linux/arm64, which is
+    # what Docker Desktop builds by default on an Apple Silicon dev machine.
+    # x86_64 is paddlepaddle's primary, fully-supported platform: pinning it
+    # here makes local dev run it under Docker Desktop's built-in emulation
+    # (slower per-OCR-call, acceptable for a fallback path that isn't in
+    # the common request path) while Hetzner — an ordinary x86_64 VPS —
+    # runs it natively with no emulation and no performance cost at all.
+    platform: linux/amd64
+    restart: unless-stopped
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    # Loopback-only, same reasoning as postgres/redis below — lets a
+    # developer curl it directly from the host machine for debugging; never
+    # reachable from outside this machine, let alone the internet.
+    ports:
+      - "127.0.0.1:8001:8000"
 
   postgres:
     image: postgres:16-alpine
@@ -108,21 +153,30 @@ services:
       retries: 10
     # No top-level `ports:` mapping — reachable only from other containers on
     # the `internal` network, never from the host network or the internet.
-    # `127.0.0.1:5432:5432` below is loopback-only, for local dev tooling
-    # (psql, Prisma Studio) on the same machine — comment out for the VPS
-    # if you don't need host-side DB access there.
+    # Loopback-only host mapping below, for local dev tooling (psql, Prisma
+    # Studio) on the same machine — comment out for the VPS if you don't need
+    # host-side DB access there. Mapped to host port 5433 (not 5432) because
+    # a native/Homebrew Postgres commonly already owns 5432 on developer
+    # machines; containers still talk to this one as `postgres:5432`
+    # internally, unaffected by this host-side port choice.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    # Always requires a password — defense-in-depth against a future
+    # port-mapping mistake exposing this to the internet with no auth (a
+    # very common real-world Redis misconfiguration). The local-dev default
+    # below is a fixed, non-secret placeholder so nothing extra is needed
+    # to run `docker compose up` locally; set a real random REDIS_PASSWORD
+    # in .env for production, same pattern as POSTGRES_PASSWORD/JWT_SECRET.
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-local-dev-only-redis-password}"]
     volumes:
       - redis_data:/data
     networks: [internal]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-local-dev-only-redis-password}", "--no-auth-warning", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10

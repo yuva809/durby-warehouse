@@ -97,7 +97,7 @@ export default function BranchDetail() {
               className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-brand-50/40 cursor-pointer"
             >
               <div>
-                <div className="text-sm font-semibold text-ink-800">{r.code}</div>
+                <div className="text-sm font-semibold text-ink-800">{r.ocNumber}</div>
                 <div className="text-xs text-ink-400">{r.items.length} products · {formatDateTime(r.createdAt)}</div>
               </div>
               <RequestStatusBadge status={r.status} />

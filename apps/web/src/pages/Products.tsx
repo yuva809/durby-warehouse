@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Search, Package } from 'lucide-react'
+import { Search, Package, Plus } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
 import { ProductDrawer } from '../components/inventory/ProductDrawer'
+import { ProductFormDrawer } from '../components/inventory/ProductFormDrawer'
+import { ProductThumb } from '../components/ui/ProductThumb'
 import { useProducts, useLocations } from '../hooks/useCatalog'
 import { useInventory } from '../hooks/useInventory'
 import { STATUS_STYLES, formatCurrency, stockStatus } from '../lib/utils'
@@ -15,6 +18,7 @@ export default function Products() {
   const { data: inventoryLines = [] } = useInventory()
   const [query, setQuery] = useState('')
   const [params, setParams] = useSearchParams()
+  const [addOpen, setAddOpen] = useState(false)
 
   const branches = locations.filter((l) => l.type === 'BRANCH')
   const byLocationProduct = useMemo(() => {
@@ -32,8 +36,8 @@ export default function Products() {
 
   return (
     <div className="space-y-5">
-      <Card className="p-4">
-        <div className="relative max-w-sm">
+      <Card className="flex items-center justify-between gap-3 p-4">
+        <div className="relative max-w-sm flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
           <input
             value={query}
@@ -42,6 +46,9 @@ export default function Products() {
             className="w-full rounded-lg bg-ink-50 py-2 pl-9 pr-3 text-sm text-ink-800 outline-none ring-1 ring-inset ring-ink-200 placeholder:text-ink-400 focus:ring-brand-400"
           />
         </div>
+        <Button onClick={() => setAddOpen(true)}>
+          <Plus size={16} /> Add Product
+        </Button>
       </Card>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -57,9 +64,13 @@ export default function Products() {
             >
               <Card className="h-full p-5 transition-all group-hover:-translate-y-0.5 group-hover:shadow-md group-hover:ring-brand-200 cursor-pointer">
                 <div className="flex items-start justify-between">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-                    <Package size={18} />
-                  </span>
+                  {p.image?.imageUrl ? (
+                    <ProductThumb src={p.image.imageUrl} size={40} className="rounded-xl" />
+                  ) : (
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                      <Package size={18} />
+                    </span>
+                  )}
                   <Badge className={STATUS_STYLES[worst].badge} dot={STATUS_STYLES[worst].dot}>
                     {STATUS_STYLES[worst].label}
                   </Badge>
@@ -82,6 +93,7 @@ export default function Products() {
       </div>
 
       <ProductDrawer productId={openProduct} onClose={() => setParams({})} />
+      <ProductFormDrawer product={null} open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   )
 }

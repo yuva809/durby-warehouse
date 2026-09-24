@@ -49,8 +49,8 @@ export default function Login() {
             <LogoMark className="h-full w-full" />
           </div>
           <div>
-            <div className="font-display text-xl font-extrabold tracking-tight text-ink-900">DURBY</div>
-            <div className="text-xs font-medium text-ink-400">Warehouse &amp; Inventory</div>
+            <div className="font-display text-xl font-extrabold tracking-tight text-ink-900">ASIA MIGHT</div>
+            <div className="text-xs font-medium text-ink-400">Super Market</div>
           </div>
         </div>
 

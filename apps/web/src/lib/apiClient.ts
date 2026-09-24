@@ -1,6 +1,13 @@
 import { useAuthStore } from '../auth/authStore'
+import { queryClient } from './queryClient'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://api.localhost/api'
+
+/** Token missing/expired/invalid — clears both the session and the cache, so the next login in this tab never renders a leftover response from this one (see queryClient.ts). */
+function forceLogout() {
+  useAuthStore.getState().logout()
+  queryClient.clear()
+}
 
 export class ApiError extends Error {
   status: number
@@ -25,10 +32,8 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
   })
 
   if (res.status === 401) {
-    // Token missing/expired/invalid — the only correct response is to log
-    // out client-side; the server is the actual source of truth on this,
-    // never a client-side timer.
-    useAuthStore.getState().logout()
+    // The server is the actual source of truth on this, never a client-side timer.
+    forceLogout()
   }
 
   const text = await res.text()
@@ -42,4 +47,48 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
+  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  /**
+   * For authenticated file downloads (PDFs) — plain <a href> can't carry the
+   * Authorization header, so the caller fetches the bytes here, then hands
+   * the blob to triggerDownload below.
+   */
+  /** For multipart uploads (supplier invoice files) — the browser sets the correct Content-Type/boundary itself, so it must NOT be set manually here. */
+  async postForm<T>(path: string, form: FormData): Promise<T> {
+    const token = useAuthStore.getState().token
+    const res = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: form,
+    })
+    if (res.status === 401) forceLogout()
+    const text = await res.text()
+    const data = text ? JSON.parse(text) : undefined
+    if (!res.ok) throw new ApiError(res.status, data)
+    return data as T
+  },
+  async getBlob(path: string): Promise<Blob> {
+    const token = useAuthStore.getState().token
+    const res = await fetch(`${API_URL}${path}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+    if (res.status === 401) forceLogout()
+    if (!res.ok) {
+      const text = await res.text()
+      throw new ApiError(res.status, text ? JSON.parse(text) : undefined)
+    }
+    return res.blob()
+  },
+}
+
+/** Saves a blob to disk under `filename` using a throwaway object URL, same as a normal browser download. */
+export function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }

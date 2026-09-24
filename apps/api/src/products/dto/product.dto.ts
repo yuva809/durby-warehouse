@@ -14,6 +14,14 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsString()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsString()
   brand?: string;
 
   @IsOptional()
@@ -41,6 +49,14 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
 
   @IsOptional()
   @IsString()

@@ -50,9 +50,11 @@ export function useApproveRequest() {
     mutationFn: requestService.approve,
     onSuccess: () => {
       invalidateAfterRequestChange(qc)
-      // Approval reserves stock and creates a transfer — both need a refetch.
+      // Approval reserves stock and creates a transfer — both need a refetch,
+      // and the branch-visible available-from-warehouse number just changed too.
       qc.invalidateQueries({ queryKey: ['inventory'] })
       qc.invalidateQueries({ queryKey: ['transfers'] })
+      qc.invalidateQueries({ queryKey: ['warehouse-availability'] })
     },
   })
 }

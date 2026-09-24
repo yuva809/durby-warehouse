@@ -5,6 +5,7 @@ import { TransferStatusBadge } from '../components/ui/StatusBadge'
 import { EmptyState } from '../components/ui/EmptyState'
 import { TransferDrawer } from '../components/transfers/TransferDrawer'
 import { useTransfers } from '../hooks/useTransfers'
+import { transferDocNumber } from '../lib/utils'
 import type { TransferStatus } from '../types'
 
 const PRIORITY: Record<TransferStatus, number> = {
@@ -43,7 +44,7 @@ export default function Deliveries() {
               <Card className="h-full p-5 transition-all hover:-translate-y-0.5 hover:shadow-md hover:ring-brand-200 cursor-pointer">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="font-display text-[15px] font-bold text-ink-900">{t.code}</div>
+                    <div className="font-display text-[15px] font-bold text-ink-900">{transferDocNumber(t)}</div>
                     <div className="mt-0.5 flex items-center gap-1 text-xs text-ink-400">
                       <MapPin size={11} /> {t.branch?.name}
                     </div>

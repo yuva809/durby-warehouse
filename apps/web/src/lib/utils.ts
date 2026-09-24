@@ -1,8 +1,20 @@
 import { clsx, type ClassValue } from 'clsx'
-import type { StockStatus } from '../types'
+import type { StockStatus, Transfer } from '../types'
 
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs)
+}
+
+/**
+ * The one customer-facing identifier for a transfer, anywhere in the UI.
+ * Before dispatch a delivery has no identity of its own yet (dcNumber is
+ * null until dispatch() assigns it), so the order it belongs to (ocNumber)
+ * is what's shown instead — never the internal TR- code. Mirrors the same
+ * OC-fallback-before-dispatch rule used for activity log messages
+ * server-side (see transfers.service.ts).
+ */
+export function transferDocNumber(t: Pick<Transfer, 'dcNumber' | 'request'>): string {
+  return t.dcNumber ?? t.request?.ocNumber ?? '—'
 }
 
 export function formatCurrency(value: number) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, AlertTriangle, XCircle, PackageCheck } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, XCircle, PackageCheck, FileDown } from 'lucide-react'
 import { Drawer } from '../ui/Drawer'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
@@ -14,6 +14,7 @@ import { cn, formatDateTime } from '../../lib/utils'
 import { computeRequestTimeline } from '../../lib/requestTimeline'
 import { WAREHOUSE_ID } from '../../types'
 import { ApiError } from '../../lib/apiClient'
+import { documentService } from '../../services/documentService'
 
 export function RequestDrawer({
   requestId,
@@ -46,7 +47,6 @@ export function RequestDrawer({
   const [confirming, setConfirming] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
-  const [justApprovedTransferCode, setJustApprovedTransferCode] = useState<string | null>(null)
   const [justApprovedTransferId, setJustApprovedTransferId] = useState<string | null>(null)
   const [draftApproved, setDraftApproved] = useState<Record<string, number>>({})
 
@@ -54,7 +54,6 @@ export function RequestDrawer({
     setConfirming(false)
     setRejecting(false)
     setReason('')
-    setJustApprovedTransferCode(null)
     setJustApprovedTransferId(null)
     setDraftApproved({})
   }, [requestId])
@@ -68,10 +67,25 @@ export function RequestDrawer({
 
   const rows = useMemo(() => {
     if (!request) return []
+    // The linked transfer is where picked/delivered actually live (this
+    // request itself only ever knows requested/approved) — merged in here
+    // purely for display, so the drawer can show the whole
+    // requested → approved → picked → delivered chain in one place.
+    const transferItems = new Map((request.transfer?.items ?? []).map((ti) => [ti.productId, ti]))
     return request.items.map((item) => {
       const approved = draftApproved[item.productId] ?? item.approvedQty ?? item.requestedQty
       const stock = available.get(item.productId) ?? 0
-      return { item, product: item.product!, available: stock, approved, sufficient: stock >= item.requestedQty }
+      const transferItem = transferItems.get(item.productId)
+      return {
+        item,
+        product: item.product!,
+        available: stock,
+        approved,
+        sufficient: stock >= item.requestedQty,
+        pickedQty: transferItem?.pickedQty ?? null,
+        deliveredQty: transferItem?.deliveredQty ?? null,
+        shortageReason: transferItem?.shortageReason ?? null,
+      }
     })
   }, [request, draftApproved, available])
 
@@ -94,7 +108,6 @@ export function RequestDrawer({
     )
     try {
       const transfer = await approveRequest.mutateAsync(request.id)
-      setJustApprovedTransferCode(transfer.code)
       setJustApprovedTransferId(transfer.id)
     } catch {
       // ApiError already surfaced via approveRequest.error below
@@ -117,12 +130,12 @@ export function RequestDrawer({
       <Drawer
         open={!!requestId}
         onClose={onClose}
-        title={request.code}
+        title={request.ocNumber}
         subtitle={`${branchName} · ${formatDateTime(request.createdAt)}`}
         footer={
           justApprovedTransferId ? (
             <Button className="w-full" onClick={() => { onViewTransfer?.(justApprovedTransferId); onClose() }}>
-              View Transfer {justApprovedTransferCode}
+              View Delivery Details
             </Button>
           ) : canReview ? (
             rejecting ? (
@@ -174,7 +187,7 @@ export function RequestDrawer({
             </div>
           ) : linkedTransfer ? (
             <Button variant="outline" className="w-full" onClick={() => { onViewTransfer?.(linkedTransfer.id); onClose() }}>
-              View Transfer {linkedTransfer.code}
+              View Delivery Details{linkedTransfer.dcNumber ? ` — ${linkedTransfer.dcNumber}` : ''}
             </Button>
           ) : null
         }
@@ -184,64 +197,106 @@ export function RequestDrawer({
           <RequestStatusBadge status={request.status} />
         </div>
 
+        <div className="mb-5 flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => documentService.downloadOrderConfirmation(request.id, request.ocNumber)}>
+            <FileDown size={14} /> Order Confirmation
+          </Button>
+          {/* dcNumber is only ever set once the transfer has actually been dispatched — the same moment the server starts allowing this download. */}
+          {linkedTransfer?.dcNumber && (
+            <Button variant="outline" size="sm" onClick={() => documentService.downloadDeliveryChallan(linkedTransfer.id, linkedTransfer.dcNumber!)}>
+              <FileDown size={14} /> Delivery Challan
+            </Button>
+          )}
+        </div>
+
         <div className="mb-6">
           <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-400">Timeline</div>
           <Timeline steps={computeRequestTimeline(request, linkedTransfer)} />
         </div>
 
         <div className="space-y-3">
-          {rows.map(({ item, product, available: stock, approved, sufficient }) => (
-            <div key={item.productId} className="rounded-xl ring-1 ring-ink-200/70 p-3.5">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-ink-900">{product.name}</span>
-                {canReview &&
-                  (sufficient ? (
-                    <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-600/20">Available ✓</Badge>
-                  ) : (
-                    <Badge className="bg-rose-50 text-rose-700 ring-rose-600/20">
-                      <AlertTriangle size={11} /> Insufficient
+          {rows.map(({ item, product, available: stock, approved, sufficient, pickedQty, deliveredQty, shortageReason }) => {
+            const isApproved = item.approvedQty !== undefined && item.approvedQty !== null
+            const notApproved = isApproved ? item.requestedQty - item.approvedQty! : 0
+            const approvedNotDelivered =
+              isApproved && deliveredQty !== null ? Math.max(0, item.approvedQty! - deliveredQty) : 0
+            return (
+              <div key={item.productId} className="rounded-xl ring-1 ring-ink-200/70 p-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-ink-900">{product.name}</span>
+                  {canReview &&
+                    (sufficient ? (
+                      <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-600/20">Available ✓</Badge>
+                    ) : (
+                      <Badge className="bg-rose-50 text-rose-700 ring-rose-600/20">
+                        <AlertTriangle size={11} /> Insufficient
+                      </Badge>
+                    ))}
+                  {!canReview && isApproved && notApproved > 0 && !linkedTransfer && (
+                    <Badge className="bg-amber-50 text-amber-700 ring-amber-600/20">
+                      Partially approved — {item.approvedQty} of {item.requestedQty}
                     </Badge>
-                  ))}
-              </div>
-              <div className={cn('mt-2 grid gap-2 text-xs', isManager ? 'grid-cols-3' : 'grid-cols-2')}>
-                {isManager && (
-                  <div>
-                    <div className="text-ink-400">Warehouse</div>
-                    <div className="font-semibold text-ink-700 tabular-nums">{stock} {product.unit}</div>
-                  </div>
-                )}
-                <div>
-                  <div className="text-ink-400">Requested</div>
-                  <div className="font-semibold text-ink-700 tabular-nums">{item.requestedQty} {product.unit}</div>
+                  )}
                 </div>
-                <div>
-                  <div className="text-ink-400">Approved</div>
-                  {canReview ? (
-                    <input
-                      type="number"
-                      min={0}
-                      value={approved}
-                      onChange={(e) => setDraftApproved((s) => ({ ...s, [item.productId]: Math.max(0, Number(e.target.value)) }))}
-                      onBlur={(e) => persistQtyIfChanged(item.productId, Math.max(0, Number(e.target.value)))}
-                      className={cn(
-                        'w-full rounded-md bg-ink-50 px-2 py-1 text-sm font-semibold tabular-nums outline-none ring-1 ring-inset focus:ring-brand-400',
-                        approved !== item.requestedQty ? 'ring-amber-300 text-amber-700' : 'ring-ink-200 text-ink-700',
-                      )}
-                    />
-                  ) : (
-                    <div className="font-semibold tabular-nums text-ink-700">
-                      {item.approvedQty ?? '—'} {item.approvedQty !== undefined && item.approvedQty !== null ? product.unit : ''}
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs">
+                  {isManager && (
+                    <div>
+                      <div className="text-ink-400">Warehouse</div>
+                      <div className="font-semibold text-ink-700 tabular-nums">{stock} {product.unit}</div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-ink-400">Requested</div>
+                    <div className="font-semibold text-ink-700 tabular-nums">{item.requestedQty} {product.unit}</div>
+                  </div>
+                  <div className="min-w-[80px]">
+                    <div className="text-ink-400">Approved</div>
+                    {canReview ? (
+                      <input
+                        type="number"
+                        min={0}
+                        value={approved}
+                        onChange={(e) => setDraftApproved((s) => ({ ...s, [item.productId]: Math.max(0, Number(e.target.value)) }))}
+                        onBlur={(e) => persistQtyIfChanged(item.productId, Math.max(0, Number(e.target.value)))}
+                        className={cn(
+                          'w-full rounded-md bg-ink-50 px-2 py-1 text-sm font-semibold tabular-nums outline-none ring-1 ring-inset focus:ring-brand-400',
+                          approved !== item.requestedQty ? 'ring-amber-300 text-amber-700' : 'ring-ink-200 text-ink-700',
+                        )}
+                      />
+                    ) : (
+                      <div className="font-semibold tabular-nums text-ink-700">
+                        {item.approvedQty ?? '—'} {isApproved ? product.unit : ''}
+                      </div>
+                    )}
+                  </div>
+                  {pickedQty !== null && (
+                    <div>
+                      <div className="text-ink-400">Picked</div>
+                      <div className="font-semibold text-ink-700 tabular-nums">{pickedQty} {product.unit}</div>
+                    </div>
+                  )}
+                  {deliveredQty !== null && (
+                    <div>
+                      <div className="text-ink-400">Delivered</div>
+                      <div className="font-semibold text-ink-700 tabular-nums">{deliveredQty} {product.unit}</div>
                     </div>
                   )}
                 </div>
+                {canReview && approved !== item.requestedQty && (
+                  <div className="mt-1.5 text-[11px] text-amber-600">
+                    Requested: {item.requestedQty} {product.unit} → Approved: {approved} {product.unit}
+                  </div>
+                )}
+                {!canReview && (notApproved > 0 || approvedNotDelivered > 0) && (
+                  <div className="mt-1.5 space-y-0.5 text-[11px] text-amber-600">
+                    {notApproved > 0 && <div>{notApproved} {product.unit} not approved</div>}
+                    {approvedNotDelivered > 0 && <div>{approvedNotDelivered} {product.unit} approved but not delivered</div>}
+                    {shortageReason && <div className="text-ink-500">Reason: {shortageReason}</div>}
+                  </div>
+                )}
               </div>
-              {canReview && approved !== item.requestedQty && (
-                <div className="mt-1.5 text-[11px] text-amber-600">
-                  Requested: {item.requestedQty} {product.unit} → Approved: {approved} {product.unit}
-                </div>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
       </Drawer>
 

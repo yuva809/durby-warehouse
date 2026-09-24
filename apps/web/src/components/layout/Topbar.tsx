@@ -3,17 +3,18 @@ import { LogOut, Menu } from 'lucide-react'
 import { useAuthStore } from '../../auth/authStore'
 import { isBranchUser, isDriver, isManager, ROLE_LABEL } from '../../auth/roles'
 import { useLocations } from '../../hooks/useCatalog'
+import { queryClient } from '../../lib/queryClient'
 
 const TITLES: { match: (p: string) => boolean; title: string; subtitle: string }[] = [
   { match: (p) => p === '/', title: 'Dashboard', subtitle: 'Real-time view across the network' },
   { match: (p) => p.startsWith('/inventory'), title: 'Inventory', subtitle: 'Stock across warehouse and branches' },
-  { match: (p) => p.startsWith('/products'), title: 'Products', subtitle: 'Full catalog managed by Durby' },
+  { match: (p) => p.startsWith('/products'), title: 'Products', subtitle: 'Full catalog managed by Asia Might Super Market' },
   { match: (p) => p.startsWith('/branches'), title: 'Branches', subtitle: 'Five branches supplied from one warehouse' },
   { match: (p) => p.startsWith('/requests'), title: 'Stock Requests', subtitle: 'From submission to approval' },
   { match: (p) => p.startsWith('/transfers'), title: 'Transfers', subtitle: 'Approved requests in motion' },
   { match: (p) => p.startsWith('/deliveries'), title: 'Deliveries', subtitle: 'Picking and last-mile delivery' },
   { match: (p) => p.startsWith('/activity'), title: 'Activity', subtitle: 'Full audit trail of the network' },
-  { match: (p) => p.startsWith('/roadmap'), title: 'Roadmap', subtitle: "What's next for Durby Warehouse" },
+  { match: (p) => p.startsWith('/roadmap'), title: 'Roadmap', subtitle: "What's next for Asia Might Super Market" },
 ]
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
@@ -38,6 +39,11 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
 
   function handleLogout() {
     logout()
+    // Otherwise the next login in this tab (a different user, or a
+    // different branch) can briefly render this session's cached lists —
+    // query keys like ['requests','all'] aren't scoped per-user, so the
+    // cache has to be dropped explicitly at the session boundary.
+    queryClient.clear()
     navigate('/login', { replace: true })
   }
 

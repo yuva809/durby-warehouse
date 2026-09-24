@@ -67,7 +67,7 @@ export class InventoryController {
     const [items, total] = await Promise.all([
       this.prisma.inventoryMovement.findMany({
         where,
-        include: { product: true, location: true, user: true },
+        include: { product: true, location: true, user: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'desc' },
         take,
         skip,

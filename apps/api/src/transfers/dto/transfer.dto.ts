@@ -13,6 +13,11 @@ export class SetPickedQtyDto {
   @IsInt()
   @Min(0)
   pickedQty!: number;
+
+  /** Required by the service layer when pickedQty < approvedQty (damaged, rotten, short, etc). */
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class DeliveredItemDto {

@@ -1,8 +1,11 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Param, Post, Res } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import type { Response } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 import { TransfersService } from './transfers.service';
+import { DocumentsService } from '../documents/documents.service';
 import {
   AssignDriverDto,
   FailDeliveryDto,
@@ -14,7 +17,11 @@ import {
 
 @Controller('transfers')
 export class TransfersController {
-  constructor(private transfers: TransfersService) {}
+  constructor(
+    private transfers: TransfersService,
+    private documents: DocumentsService,
+    private prisma: PrismaService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthUser) {
@@ -24,6 +31,44 @@ export class TransfersController {
   @Get(':id')
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.transfers.get(id, user);
+  }
+
+  /**
+   * What was actually dispatched/delivered — reuses GET /transfers/:id's
+   * authorization exactly (branch/driver scoped via assertAccess,
+   * manager/admin unrestricted). Generated fresh from the database every
+   * time; nothing about this document is ever persisted as a file.
+   */
+  @Get(':id/delivery-challan')
+  async deliveryChallan(@Param('id') id: string, @CurrentUser() user: AuthUser, @Res() res: Response) {
+    const transfer = await this.transfers.get(id, user);
+    if (!transfer.dcNumber) {
+      throw new ConflictException('Delivery Challan is not available until this transfer has been dispatched');
+    }
+    const warehouse = await this.prisma.location.findFirst({ where: { type: 'WAREHOUSE' } });
+    this.documents.renderDeliveryChallan(res, {
+      dcNumber: transfer.dcNumber,
+      code: transfer.code,
+      ocNumber: transfer.request?.ocNumber ?? '—',
+      requestCode: transfer.request?.code ?? '—',
+      branchName: transfer.branch.name,
+      branchCity: transfer.branch.city,
+      warehouseName: warehouse?.name ?? 'Central Warehouse',
+      warehouseCity: warehouse?.city,
+      dispatchDate: transfer.outForDeliveryAt,
+      deliveredAt: transfer.deliveredAt,
+      status: transfer.status,
+      driverName: transfer.driver?.name ?? null,
+      items: transfer.items.map((item) => ({
+        productName: item.product.name,
+        category: item.product.category,
+        unit: item.product.unit,
+        approvedQty: item.approvedQty,
+        pickedQty: item.pickedQty ?? null,
+        deliveredQty: item.deliveredQty ?? null,
+        shortageReason: item.shortageReason ?? null,
+      })),
+    });
   }
 
   @Roles(Role.WAREHOUSE_MANAGER, Role.SUPER_ADMIN)

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Truck, PackageCheck, CheckCircle2, ArrowRight, AlertTriangle, XCircle, RotateCcw } from 'lucide-react'
+import { Truck, PackageCheck, CheckCircle2, ArrowRight, AlertTriangle, XCircle, RotateCcw, FileDown } from 'lucide-react'
 import { Drawer } from '../ui/Drawer'
 import { Button } from '../ui/Button'
 import { TimelineRow } from '../ui/Timeline'
@@ -21,6 +21,7 @@ import { cn, formatDateTime } from '../../lib/utils'
 import { TRANSFER_STATUS_ORDER } from '../../lib/requestTimeline'
 import type { TransferStatus } from '../../types'
 import { ApiError } from '../../lib/apiClient'
+import { documentService } from '../../services/documentService'
 
 const STEPS: { key: TransferStatus; label: string }[] = [
   { key: 'READY', label: 'Ready for Delivery' },
@@ -41,6 +42,7 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
   const [failReason, setFailReason] = useState('')
   const [failing, setFailing] = useState(false)
   const [pickedDraft, setPickedDraft] = useState<Record<string, number>>({})
+  const [pickedReasonDraft, setPickedReasonDraft] = useState<Record<string, string>>({})
 
   const assignDriver = useAssignDriver()
   const startPicking = useStartPicking()
@@ -60,13 +62,62 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
   const canDriverOrManagerOperate = isManager || (user?.role === 'DRIVER' && transfer.driverId === user.userId)
   const canBranchConfirm = isBranch && user?.locationId === transfer.branchId
 
-  function persistPickedIfChanged(productId: string, qty: number) {
-    const onServer = transfer!.items.find((i) => i.productId === productId)?.pickedQty
-    if (qty !== onServer) setPickedQty.mutate({ transferId: transfer!.id, productId, pickedQty: qty })
+  const anyPickReasonMissing = transfer.items.some((item) => {
+    const value = pickedDraft[item.productId] ?? item.pickedQty ?? item.approvedQty
+    const reasonValue = pickedReasonDraft[item.productId] ?? item.shortageReason ?? ''
+    return value < item.approvedQty && !reasonValue.trim()
+  })
+
+  function persistPickedIfChanged(productId: string, qty: number, reason?: string) {
+    const serverItem = transfer!.items.find((i) => i.productId === productId)
+    const isShort = qty < (serverItem?.approvedQty ?? 0)
+    // The backend requires a reason whenever picked < approved — don't fire
+    // the mutation until one's been typed, so the driver isn't shown a raw
+    // 409 for simply not having reached the reason field yet.
+    if (isShort && !reason?.trim()) return
+    if (qty !== serverItem?.pickedQty || (reason?.trim() ?? '') !== (serverItem?.shortageReason ?? '')) {
+      setPickedQty.mutate({ transferId: transfer!.id, productId, pickedQty: qty, reason: reason?.trim() })
+    }
+  }
+
+  /**
+   * Persisting a picked-qty edit happens on blur, fire-and-forget — a driver
+   * who edits a quantity and immediately taps "Start Delivery" (or an
+   * automated click) could otherwise dispatch before that write lands,
+   * using the pre-edit quantity. Flush every unsaved draft first and wait
+   * for it, same pattern as RequestDrawer's handleApprove flushing draft
+   * approved-qty edits before approving.
+   */
+  async function handleDispatch() {
+    await Promise.all(
+      transfer!.items.map((item) => {
+        const draftQty = pickedDraft[item.productId]
+        const draftReason = pickedReasonDraft[item.productId]
+        if (draftQty === undefined) return Promise.resolve()
+        const reason = draftReason ?? item.shortageReason ?? undefined
+        if (draftQty === item.pickedQty && (reason?.trim() ?? '') === (item.shortageReason ?? '')) return Promise.resolve()
+        return setPickedQty.mutateAsync({ transferId: transfer!.id, productId: item.productId, pickedQty: draftQty, reason })
+      }),
+    )
+    dispatch.mutate(transfer!.id)
   }
 
   return (
-    <Drawer open={!!transferId} onClose={onClose} title={transfer.code} subtitle={`Central Warehouse → ${branchName} · ${formatDateTime(transfer.createdAt)}`}>
+    <Drawer
+      open={!!transferId}
+      onClose={onClose}
+      title={transfer.dcNumber ?? 'Delivery'}
+      subtitle={`Central Warehouse → ${branchName} · Order ${transfer.request?.ocNumber ?? '—'} · ${formatDateTime(transfer.createdAt)}`}
+    >
+      {/* dcNumber is assigned exactly at dispatch — the same moment the server starts allowing this download, so its presence IS the gate. */}
+      {transfer.dcNumber && (
+        <div className="mb-5">
+          <Button variant="outline" size="sm" onClick={() => documentService.downloadDeliveryChallan(transfer.id, transfer.dcNumber!)}>
+            <FileDown size={14} /> Delivery Challan
+          </Button>
+        </div>
+      )}
+
       <div>
         <div className="text-xs font-semibold uppercase tracking-wide text-ink-400 mb-3">Timeline</div>
         <div className="space-y-0">
@@ -111,6 +162,9 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
                     </>
                   )}
                 </div>
+              )}
+              {item.shortageReason && (
+                <div className="mt-0.5 text-xs text-amber-600">Reason: {item.shortageReason}</div>
               )}
             </div>
           ))}
@@ -171,30 +225,52 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
               <div className="space-y-2">
                 {transfer.items.map((item) => {
                   const value = pickedDraft[item.productId] ?? item.pickedQty ?? item.approvedQty
+                  const isShort = value < item.approvedQty
+                  const reasonValue = pickedReasonDraft[item.productId] ?? item.shortageReason ?? ''
                   return (
-                    <div key={item.productId} className="flex items-center gap-3 rounded-xl ring-1 ring-ink-200/70 p-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-ink-800">{item.product?.name}</div>
-                        <div className="text-xs text-ink-400">Approved: {item.approvedQty} {item.product?.unit}</div>
+                    <div key={item.productId} className="rounded-xl ring-1 ring-ink-200/70 p-3">
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-ink-800">{item.product?.name}</div>
+                          <div className="text-xs text-ink-400">Approved: {item.approvedQty} {item.product?.unit}</div>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={item.approvedQty}
+                          value={value}
+                          onChange={(e) => setPickedDraft((s) => ({ ...s, [item.productId]: Math.max(0, Math.min(item.approvedQty, Number(e.target.value))) }))}
+                          onBlur={(e) => persistPickedIfChanged(item.productId, Math.max(0, Math.min(item.approvedQty, Number(e.target.value))), reasonValue)}
+                          className={cn(
+                            'w-20 rounded-lg bg-ink-50 px-2 py-1.5 text-right text-sm font-semibold tabular-nums outline-none ring-1 ring-inset focus:ring-brand-400',
+                            value !== item.approvedQty ? 'ring-amber-300 text-amber-700' : 'ring-ink-200 text-ink-700',
+                          )}
+                        />
                       </div>
-                      <input
-                        type="number"
-                        min={0}
-                        max={item.approvedQty}
-                        value={value}
-                        onChange={(e) => setPickedDraft((s) => ({ ...s, [item.productId]: Math.max(0, Math.min(item.approvedQty, Number(e.target.value))) }))}
-                        onBlur={(e) => persistPickedIfChanged(item.productId, Math.max(0, Math.min(item.approvedQty, Number(e.target.value))))}
-                        className={cn(
-                          'w-20 rounded-lg bg-ink-50 px-2 py-1.5 text-right text-sm font-semibold tabular-nums outline-none ring-1 ring-inset focus:ring-brand-400',
-                          value !== item.approvedQty ? 'ring-amber-300 text-amber-700' : 'ring-ink-200 text-ink-700',
-                        )}
-                      />
+                      {isShort && (
+                        <input
+                          type="text"
+                          value={reasonValue}
+                          onChange={(e) => setPickedReasonDraft((s) => ({ ...s, [item.productId]: e.target.value }))}
+                          onBlur={(e) => persistPickedIfChanged(item.productId, value, e.target.value)}
+                          placeholder="Reason required — e.g. 3 damaged / rotten"
+                          className={cn(
+                            'mt-2 w-full rounded-lg bg-ink-50 px-2.5 py-1.5 text-xs outline-none ring-1 ring-inset placeholder:text-ink-400 focus:ring-rose-400',
+                            reasonValue.trim() ? 'ring-ink-200 text-ink-700' : 'ring-rose-300 text-rose-700',
+                          )}
+                        />
+                      )}
                     </div>
                   )
                 })}
               </div>
-              <Button className="mt-4 w-full" size="lg" disabled={dispatch.isPending} onClick={() => dispatch.mutate(transfer.id)}>
-                <ArrowRight size={16} /> {dispatch.isPending ? 'Starting…' : 'Start Delivery'}
+              {anyPickReasonMissing && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  <AlertTriangle size={14} className="shrink-0" /> A reason is required for every item picked below its approved quantity.
+                </div>
+              )}
+              <Button className="mt-4 w-full" size="lg" disabled={dispatch.isPending || setPickedQty.isPending || anyPickReasonMissing} onClick={handleDispatch}>
+                <ArrowRight size={16} /> {dispatch.isPending || setPickedQty.isPending ? 'Starting…' : 'Start Delivery'}
               </Button>
               {dispatch.isError && (
                 <div className="mt-2 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">

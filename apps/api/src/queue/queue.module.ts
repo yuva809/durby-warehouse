@@ -3,13 +3,20 @@ import { BullModule } from '@nestjs/bullmq';
 
 export const ACTIVITY_QUEUE = 'activity';
 export const NOTIFICATIONS_QUEUE = 'notifications';
+export const PRODUCT_IMAGE_QUEUE = 'product-image';
 
 /**
- * Registers BullMQ against the shared Redis instance. Two small queues:
+ * Registers BullMQ against the shared Redis instance.
  * - `activity`: writes to ActivityLog off the request-handling path.
  * - `notifications`: stubbed job type for future email/SMS/WhatsApp (V1's
- *   Roadmap page already promises this) — processed by the same worker
- *   process, not a separate service, per "avoid unnecessary microservices."
+ *   Roadmap page already promises this).
+ * - `product-image`: background catalog-image enrichment for products
+ *   matched/created during a supplier invoice upload — see
+ *   product-images/product-image.processor.ts. Kept off the upload request
+ *   path specifically so a slow/unavailable image provider can never add
+ *   latency to (let alone block) stock intake.
+ * All processed by the same shared worker process, not one service per
+ * queue, per "avoid unnecessary microservices."
  */
 @Module({
   imports: [
@@ -17,9 +24,10 @@ export const NOTIFICATIONS_QUEUE = 'notifications';
       connection: {
         host: process.env.REDIS_HOST ?? 'localhost',
         port: Number(process.env.REDIS_PORT ?? 6379),
+        password: process.env.REDIS_PASSWORD || undefined,
       },
     }),
-    BullModule.registerQueue({ name: ACTIVITY_QUEUE }, { name: NOTIFICATIONS_QUEUE }),
+    BullModule.registerQueue({ name: ACTIVITY_QUEUE }, { name: NOTIFICATIONS_QUEUE }, { name: PRODUCT_IMAGE_QUEUE }),
   ],
   exports: [BullModule],
 })

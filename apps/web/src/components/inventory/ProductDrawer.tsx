@@ -1,11 +1,17 @@
+import { useState } from 'react'
 import { Drawer } from '../ui/Drawer'
 import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
+import { ProductFormDrawer } from './ProductFormDrawer'
+import { ProductImagePanel } from './ProductImagePanel'
 import { useProduct, useLocations } from '../../hooks/useCatalog'
 import { useInventory } from '../../hooks/useInventory'
 import { useActivity } from '../../hooks/useActivity'
+import { useAuthStore } from '../../auth/authStore'
+import { isManager } from '../../auth/roles'
 import { STATUS_STYLES, formatCurrency, formatTime, stockStatus } from '../../lib/utils'
 import { WAREHOUSE_ID } from '../../types'
-import { Clock, CalendarClock } from 'lucide-react'
+import { Clock, CalendarClock, Pencil } from 'lucide-react'
 
 function formatExpiry(iso: string) {
   const [y, m, d] = iso.split('-')
@@ -13,10 +19,12 @@ function formatExpiry(iso: string) {
 }
 
 export function ProductDrawer({ productId, onClose }: { productId: string | null; onClose: () => void }) {
+  const user = useAuthStore((s) => s.user)
   const { data: product } = useProduct(productId)
   const { data: locations = [] } = useLocations()
   const { data: inventoryLines = [] } = useInventory()
   const { data: activity = [] } = useActivity()
+  const [editOpen, setEditOpen] = useState(false)
 
   if (!product) return null
 
@@ -31,15 +39,28 @@ export function ProductDrawer({ productId, onClose }: { productId: string | null
   const expiringSoon = daysToExpiry !== undefined && daysToExpiry <= 150
 
   return (
+    <>
     <Drawer
       open={!!productId}
       onClose={onClose}
       title={product.name}
       subtitle={[product.brand, `Article No. ${product.sku}`].filter(Boolean).join(' · ')}
+      footer={
+        isManager(user) ? (
+          <Button variant="outline" className="w-full" onClick={() => setEditOpen(true)}>
+            <Pencil size={15} /> Edit Product
+          </Button>
+        ) : undefined
+      }
     >
+      <div className="mb-4">
+        <ProductImagePanel productId={product.id} />
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
           { label: 'Article No.', value: product.sku },
+          { label: 'Barcode', value: product.barcode ?? '—' },
           { label: 'Brand', value: product.brand ?? '—' },
           { label: 'Category', value: product.category },
           { label: 'Pack', value: product.pack ?? '—' },
@@ -109,6 +130,8 @@ export function ProductDrawer({ productId, onClose }: { productId: string | null
           </div>
         ))}
       </div>
-    </Drawer>
+      </Drawer>
+      <ProductFormDrawer product={product} open={editOpen} onClose={() => setEditOpen(false)} />
+    </>
   )
 }

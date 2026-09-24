@@ -18,6 +18,18 @@ export class ProductsController {
     return this.products.list(includeInactive === 'true');
   }
 
+  /**
+   * Open to every authenticated role — including branches, who otherwise
+   * see no stock numbers at all. Only ever exposes computed available-from-
+   * warehouse quantities (onHand - reserved), never onHand/reserved
+   * individually, movements, or any other location's data. Declared before
+   * `:id` below so it isn't swallowed by that route.
+   */
+  @Get('availability')
+  availability(@Query('categoryId') categoryId?: string, @Query('search') search?: string) {
+    return this.products.listWarehouseAvailability({ categoryId, search });
+  }
+
   @Get(':id')
   get(@Param('id') id: string) {
     return this.products.get(id);

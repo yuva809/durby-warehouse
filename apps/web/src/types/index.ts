@@ -25,11 +25,44 @@ export interface Location {
   active: boolean
 }
 
+export interface ProductCategory {
+  id: string
+  name: string
+  icon?: string | null
+  description?: string | null
+  active: boolean
+  displayOrder: number
+  productCount?: number
+}
+
+export type ProductImageStatus = 'NOT_FOUND' | 'FOUND_NEEDS_REVIEW' | 'AUTO_MATCHED' | 'VERIFIED' | 'MANUAL_UPLOAD'
+
+export interface ProductImage {
+  id: string
+  productId: string
+  status: ProductImageStatus
+  /** Always the URL to actually put in <img src>, regardless of whether it's an external CDN link or our own file endpoint. */
+  imageUrl: string | null
+  source?: string | null
+  confidence?: number | null
+  matchedName?: string | null
+  matchedBrand?: string | null
+  matchedBarcode?: string | null
+  attribution?: string | null
+  fetchedAt?: string | null
+  verifiedById?: string | null
+  verifiedAt?: string | null
+  verifiedBy?: { name: string } | null
+}
+
 export interface Product {
   id: string
   name: string
   sku: string
   category: string
+  categoryId?: string | null
+  /** Real EAN/GTIN/UPC, when known — separate from `sku`. Used for exact product-image lookups. */
+  barcode?: string | null
   unit: string
   minStock: number
   unitPrice: number
@@ -44,6 +77,8 @@ export interface Product {
    */
   sourceRef?: string | null
   active: boolean
+  /** Only ever a live, catalog-appropriate image (never an unreviewed candidate) — see ProductsService.listWarehouseAvailability. */
+  image?: ProductImage | null
 }
 
 export type StockStatus = 'healthy' | 'low' | 'out'
@@ -89,12 +124,15 @@ export interface RequestItem {
 
 export interface StockRequest {
   id: string
-  /** Human-facing code, e.g. "REQ-1024" — use this for display, `id` for API calls. */
+  /** Internal reference code, e.g. "REQ-1024" — `id` is still what API calls use. */
   code: string
+  /** Customer-facing Order Confirmation number, e.g. "OC-000058" — use this for display. */
+  ocNumber: string
   branchId: string
   branch?: Location
   status: RequestStatus
   createdById: string
+  createdBy?: { name: string }
   reviewedById?: string | null
   reviewedAt?: string | null
   rejectionReason?: string | null
@@ -116,6 +154,21 @@ export interface TransferItem {
   pickedQty?: number | null
   /** Actual delivered quantity — defaults to pickedQty, can be less if something didn't arrive. */
   deliveredQty?: number | null
+  /** Why pickedQty is less than approvedQty (damaged, rotten, short, etc). Required by the API whenever that's the case. */
+  shortageReason?: string | null
+}
+
+/** One row from GET /products/availability — the only stock number a branch ever sees. */
+export interface WarehouseAvailability {
+  productId: string
+  productName: string
+  sku: string
+  category: string
+  categoryId?: string | null
+  unit: string
+  availableQuantity: number
+  /** Only ever a live, catalog-appropriate image — never an unreviewed candidate. */
+  image?: ProductImage | null
 }
 
 export interface Driver {
@@ -125,8 +178,10 @@ export interface Driver {
 
 export interface Transfer {
   id: string
-  /** Human-facing code, e.g. "TR-1024". */
+  /** Internal reference code, e.g. "TR-1024". */
   code: string
+  /** Customer-facing Delivery Challan number, e.g. "DC-000036" — null until dispatch(); use this for display once set. */
+  dcNumber?: string | null
   requestId: string
   request?: StockRequest
   branchId: string
@@ -153,6 +208,41 @@ export interface ActivityEvent {
   kind: 'request' | 'review' | 'transfer' | 'delivery' | 'inventory' | 'system'
   createdAt: string
   user?: { name: string } | null
+}
+
+export type SupplierInvoiceStatus = 'DRAFT' | 'UNDER_REVIEW' | 'CONFIRMED' | 'CANCELLED'
+
+export interface SupplierInvoiceItem {
+  id: string
+  invoiceId: string
+  productId?: string | null
+  product?: { id: string; name: string; sku: string; unit: string; image?: { status: ProductImageStatus; imageUrl: string | null; confidence?: number | null } | null } | null
+  rawDescription: string
+  rawProductCode?: string | null
+  unit?: string | null
+  invoiceQty: number
+  receivedQty?: number | null
+  matchConfidence?: string | null
+  needsReview: boolean
+}
+
+export interface SupplierInvoice {
+  id: string
+  code: string
+  supplierName: string
+  invoiceNumber: string
+  invoiceDate?: string | null
+  status: SupplierInvoiceStatus
+  sourceFileName?: string | null
+  sourceFileType?: string | null
+  uploadedById: string
+  uploadedBy?: { name: string }
+  confirmedById?: string | null
+  confirmedBy?: { name: string } | null
+  confirmedAt?: string | null
+  createdAt: string
+  items?: SupplierInvoiceItem[]
+  _count?: { items: number }
 }
 
 export const WAREHOUSE_ID = 'warehouse'

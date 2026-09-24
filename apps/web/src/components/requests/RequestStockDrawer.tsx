@@ -3,11 +3,16 @@ import { Search, Plus, X, CheckCircle2, ClipboardList, AlertTriangle } from 'luc
 import { Drawer } from '../ui/Drawer'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
-import { useProducts } from '../../hooks/useCatalog'
+import { useProducts, useWarehouseAvailability } from '../../hooks/useCatalog'
 import { useSubmitRequest } from '../../hooks/useRequests'
+import { cn } from '../../lib/utils'
 
 export function RequestStockDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: products = [] } = useProducts()
+  // The only stock number a branch is ever shown — computed server-side as
+  // warehouse onHand minus reserved, nothing else. See ProductsService.
+  const { data: availability = [] } = useWarehouseAvailability()
+  const availableByProduct = useMemo(() => new Map(availability.map((a) => [a.productId, a.availableQuantity])), [availability])
   const submit = useSubmitRequest()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Record<string, number>>({})
@@ -36,9 +41,15 @@ export function RequestStockDrawer({ open, onClose }: { open: boolean; onClose: 
 
   function addProduct(productId: string) {
     const product = products.find((p) => p.id === productId)!
-    // Branches can't see any stock numbers (their own or the warehouse's),
-    // so this is just a reasonable starting point to edit, not a computed gap.
-    const suggested = Math.max(product.minStock, product.unit === 'kg' || product.unit === 'liter' ? 10 : 5)
+    // A branch can now see available-from-warehouse (nothing else — not
+    // onHand/reserved), so use it as a sensible starting point when there's
+    // little of it; otherwise fall back to the same reasonable default as
+    // before. This is just a starting value to edit, never a hard cap —
+    // requesting more than what's currently available is legitimate (the
+    // manager decides, and stock may be replenished before they review it).
+    const heuristic = Math.max(product.minStock, product.unit === 'kg' || product.unit === 'liter' ? 10 : 5)
+    const available = availableByProduct.get(productId)
+    const suggested = available !== undefined && available > 0 ? Math.min(heuristic, available) : heuristic
     setSelected((s) => ({ ...s, [productId]: suggested }))
     setQuery('')
   }
@@ -59,7 +70,7 @@ export function RequestStockDrawer({ open, onClose }: { open: boolean; onClose: 
     const items = Object.entries(selected).map(([productId, requestedQty]) => ({ productId, requestedQty }))
     if (items.length === 0) return
     const request = await submit.mutateAsync(items)
-    setSubmittedCode(request.code)
+    setSubmittedCode(request.ocNumber)
   }
 
   const selectedIds = Object.keys(selected)
@@ -118,21 +129,32 @@ export function RequestStockDrawer({ open, onClose }: { open: boolean; onClose: 
 
       {query && results.length > 0 && (
         <div className="mt-2 divide-y divide-ink-50 overflow-hidden rounded-xl ring-1 ring-ink-200/70">
-          {results.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => addProduct(p.id)}
-              className="flex w-full items-center justify-between bg-white px-3.5 py-2.5 text-left hover:bg-brand-50/50 cursor-pointer"
-            >
-              <div>
-                <div className="text-sm font-medium text-ink-800">{p.name}</div>
-                <div className="text-xs text-ink-400">{p.category}</div>
-              </div>
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-                <Plus size={14} />
-              </span>
-            </button>
-          ))}
+          {results.map((p) => {
+            const available = availableByProduct.get(p.id)
+            return (
+              <button
+                key={p.id}
+                onClick={() => addProduct(p.id)}
+                className="flex w-full items-center justify-between bg-white px-3.5 py-2.5 text-left hover:bg-brand-50/50 cursor-pointer"
+              >
+                <div>
+                  <div className="text-sm font-medium text-ink-800">{p.name}</div>
+                  <div className="text-xs text-ink-400">
+                    {p.category}
+                    {available !== undefined && (
+                      <span className={available > 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                        {' '}
+                        · Available from warehouse: {available} {p.unit}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                  <Plus size={14} />
+                </span>
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -143,23 +165,33 @@ export function RequestStockDrawer({ open, onClose }: { open: boolean; onClose: 
         <div className="mt-2 space-y-2">
           {selectedIds.map((id) => {
             const product = products.find((p) => p.id === id)!
+            const available = availableByProduct.get(id)
+            const exceedsAvailable = available !== undefined && selected[id] > available
             return (
-              <div key={id} className="flex items-center gap-3 rounded-xl ring-1 ring-ink-200/70 p-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-ink-800">{product.name}</div>
-                  <div className="text-xs text-ink-400">{product.category}</div>
+              <div key={id} className="rounded-xl ring-1 ring-ink-200/70 p-3">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-ink-800">{product.name}</div>
+                    <div className="text-xs text-ink-400">{product.category}</div>
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    value={selected[id]}
+                    onChange={(e) => setQty(id, Number(e.target.value))}
+                    className="w-20 rounded-lg bg-ink-50 px-2 py-1.5 text-right text-sm font-semibold tabular-nums outline-none ring-1 ring-inset ring-ink-200 focus:ring-brand-400"
+                  />
+                  <span className="w-12 shrink-0 text-xs text-ink-400">{product.unit}</span>
+                  <button onClick={() => removeProduct(id)} className="text-ink-300 hover:text-rose-500 cursor-pointer">
+                    <X size={16} />
+                  </button>
                 </div>
-                <input
-                  type="number"
-                  min={1}
-                  value={selected[id]}
-                  onChange={(e) => setQty(id, Number(e.target.value))}
-                  className="w-20 rounded-lg bg-ink-50 px-2 py-1.5 text-right text-sm font-semibold tabular-nums outline-none ring-1 ring-inset ring-ink-200 focus:ring-brand-400"
-                />
-                <span className="w-12 shrink-0 text-xs text-ink-400">{product.unit}</span>
-                <button onClick={() => removeProduct(id)} className="text-ink-300 hover:text-rose-500 cursor-pointer">
-                  <X size={16} />
-                </button>
+                {available !== undefined && (
+                  <div className={cn('mt-1.5 text-[11px]', exceedsAvailable ? 'text-amber-600' : 'text-ink-400')}>
+                    Available from warehouse: {available} {product.unit}
+                    {exceedsAvailable && ' — may be partially approved'}
+                  </div>
+                )}
               </div>
             )
           })}

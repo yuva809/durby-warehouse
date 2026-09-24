@@ -13,7 +13,7 @@ import { useProducts, useLocations } from '../../hooks/useCatalog'
 import { useInventory } from '../../hooks/useInventory'
 import { useRequests } from '../../hooks/useRequests'
 import { useTransfers } from '../../hooks/useTransfers'
-import { formatCurrency, formatDateTime, stockStatus } from '../../lib/utils'
+import { formatCurrency, formatDateTime, stockStatus, transferDocNumber } from '../../lib/utils'
 import { WAREHOUSE_ID } from '../../types'
 
 export function WarehouseDashboard() {
@@ -109,7 +109,7 @@ export function WarehouseDashboard() {
                   className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-brand-50/40 cursor-pointer"
                 >
                   <div>
-                    <div className="text-sm font-semibold text-ink-900">{r.code}</div>
+                    <div className="text-sm font-semibold text-ink-900">{r.ocNumber}</div>
                     <div className="text-xs text-ink-400">{r.branch?.name} · {r.items.length} products</div>
                   </div>
                   <RequestStatusBadge status={r.status} />
@@ -141,7 +141,7 @@ export function WarehouseDashboard() {
                 >
                   <div>
                     <div className="text-sm font-semibold text-ink-900">{t.branch?.name}</div>
-                    <div className="text-xs text-ink-400">{t.code} · {formatDateTime(t.createdAt)}</div>
+                    <div className="text-xs text-ink-400">{transferDocNumber(t)} · {formatDateTime(t.createdAt)}</div>
                   </div>
                   <TransferStatusBadge status={t.status} />
                 </button>

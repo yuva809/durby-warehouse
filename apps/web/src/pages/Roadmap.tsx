@@ -37,7 +37,7 @@ const SECTIONS: RoadmapSection[] = [
     comingSoon: ['Branch consumption analytics', 'Demand forecasting', 'Smart reorder recommendations', 'AI inventory assistant'],
   },
   {
-    title: 'Durby Platform',
+    title: 'Asia Might Platform',
     icon: Network,
     accent: 'from-rose-500 to-rose-700',
     comingSoon: ['Restaurant integration', 'Multiple warehouses', 'Centralized product management', 'Finance / accounting integration'],

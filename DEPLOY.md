@@ -20,13 +20,15 @@ docker compose exec backend npm run seed
 
 Frontend: http://localhost — API: http://api.localhost/api — Health: http://api.localhost/api/health
 
-(macOS/Linux resolve `*.localhost` to 127.0.0.1 automatically. On Windows, add `127.0.0.1 api.localhost` to your hosts file if it doesn't.)
+(macOS/Linux resolve `*.localhost` to 127.0.0.1 automatically for browsers and `curl`. Node's own DNS resolver doesn't always do the same RFC 6761 handling — if a Node script gets `ENOTFOUND api.localhost`, point it at the backend's direct loopback port instead, e.g. `API_BASE=http://localhost:3001`. On Windows, add `127.0.0.1 api.localhost` to your hosts file if it doesn't resolve at all.)
 
 Log in with any seeded account (see `apps/api/prisma/seed.ts`) — the Login page also shows a "Demo accounts" quick-login list in dev (gated by `VITE_SHOW_DEMO_LOGINS`, on by default locally — **must be turned off before any real deployment**, see the checklist below).
 
 Run the full scenario check against the running stack:
 ```bash
 node scripts/e2e-smoke-test.mjs
+# or, if Node can't resolve api.localhost on your machine:
+API_BASE=http://localhost:3001 node scripts/e2e-smoke-test.mjs
 ```
 
 ### Standalone frontend dev (hot reload)
@@ -35,6 +37,10 @@ node scripts/e2e-smoke-test.mjs
 docker compose up -d backend postgres redis worker   # everything except frontend/proxy
 cd apps/web && cp .env.example .env.local && npm run dev
 ```
+
+The backend's loopback port is `3001` (not `3000`) — a very common dev-server
+port that's often already taken by another project on the same machine.
+`apps/web/.env.example`'s `VITE_API_URL` already points at it.
 
 ---
 
@@ -125,5 +131,7 @@ docker compose exec backend npx prisma migrate deploy
 
 - **No password reset / user-management UI.** Users are created via the API directly (`POST /api/users`) or the seed script; there's no frontend for it yet.
 - **The Login page's demo-account quick-login list must be disabled** (`VITE_SHOW_DEMO_LOGINS=false`) before any real deployment — see the production checklist above.
-- **Nothing here has been run against a live database in this environment yet** (no Docker/Postgres was available in the sandbox this was built in) — the logic was built and reasoned through carefully (see the status report), but `docker compose up` + `scripts/e2e-smoke-test.mjs` need to actually be run, here, before this is trusted in front of a customer. This is the very next step.
-- **Manager-only actions poll rather than push.** Query results are cached for ~15s (TanStack Query `staleTime`); two managers acting on the same request at the same time will each see the truth on their next fetch/navigation, not instantly via a live socket. The backend's locking is what actually prevents double-approval (see status report) — this is purely a "how fast does the screen refresh" note, not a correctness gap.
+- **Login is rate-limited to 5 attempts/minute per IP** (`@Throttle` on `/auth/login`) — intentional brute-force protection, but worth knowing if you're scripting rapid logins against a local stack (you'll see `429 ThrottlerException`; just wait a minute).
+- **Manager-only actions poll rather than push.** Query results are cached for ~15s (TanStack Query `staleTime`); two managers acting on the same request at the same time will each see the truth on their next fetch/navigation, not instantly via a live socket. The backend's locking is what actually prevents double-approval (verified live — see the concurrency test in the E2E smoke test) — this is purely a "how fast does the screen refresh" note, not a correctness gap.
+
+Verified against the real Dockerized stack (local Docker Desktop, `docker compose up -d --build`, migrated + seeded Postgres, real Redis): the full branch → manager → driver → delivery → confirm-receipt workflow, partial approval, partial picking with a discrepancy, and the two-manager concurrent-approval race (exactly one wins, one gets `409`) all pass both via `scripts/e2e-smoke-test.mjs` and by hand in the browser.

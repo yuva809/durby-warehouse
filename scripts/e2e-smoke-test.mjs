@@ -23,6 +23,12 @@
  *   API_BASE=http://api.localhost node scripts/e2e-smoke-test.mjs
  * (defaults to http://api.localhost, i.e. `docker compose up -d` on this
  * machine with the default Caddyfile domains)
+ *
+ * On some machines Node's own DNS resolver won't resolve "*.localhost"
+ * (curl and browsers do, via the OS resolver; Node's getaddrinfo doesn't
+ * always get the same RFC 6761 handling) — you'll see `ENOTFOUND
+ * api.localhost`. If so, run against the backend's direct loopback port
+ * instead: API_BASE=http://localhost:3001 node scripts/e2e-smoke-test.mjs
  */
 
 const BASE = process.env.API_BASE ?? 'http://api.localhost';
@@ -112,12 +118,21 @@ async function main() {
   assert(afterApprove.rice.onHand === before.rice.onHand, `Rice onHand unchanged by approval alone (still physically in the warehouse)`);
 
   // ---- 3. Driver: assign, pick (less than approved), dispatch --------------
-  await api(`/transfers/${transfer.id}/assign-driver`, { method: 'POST', token: managerToken, body: { driverId: (await api('/users?role=DRIVER', { token: managerToken })).body[0].id } });
-  await api(`/transfers/${transfer.id}/start-picking`, { method: 'POST', token: driverToken });
+  // Assign to Mike specifically (not just body[0]) — the driver list's order
+  // isn't guaranteed to match which driver's token this script logged in as.
+  const drivers = (await api('/users?role=DRIVER', { token: managerToken })).body;
+  const mike = drivers.find((d) => d.email === 'mike@durby.tech');
+  const { status: assignStatus } = await api(`/transfers/${transfer.id}/assign-driver`, { method: 'POST', token: managerToken, body: { driverId: mike.id } });
+  assert(assignStatus === 201 || assignStatus === 200, `Driver assigned to transfer (status ${assignStatus})`);
+  const { status: startPickingStatus } = await api(`/transfers/${transfer.id}/start-picking`, { method: 'POST', token: driverToken });
+  assert(startPickingStatus === 201 || startPickingStatus === 200, `Driver started picking (status ${startPickingStatus})`);
 
   const pickedRice = afterApprove.rice.reserved - 2; // pick 2 fewer than approved, on purpose
   const pickedMilk = afterApprove.milk.reserved;
-  await api(`/transfers/${transfer.id}/picked-qty`, { method: 'POST', token: driverToken, body: { productId: RICE, pickedQty: pickedRice } });
+  // V2.1: a reason is required whenever picked < approved (surfaced on the
+  // Delivery Challan) — the API 409s a short pick with no reason.
+  const { status: pickedRiceStatus } = await api(`/transfers/${transfer.id}/picked-qty`, { method: 'POST', token: driverToken, body: { productId: RICE, pickedQty: pickedRice, reason: '2 damaged / rotten' } });
+  assert(pickedRiceStatus === 201 || pickedRiceStatus === 200, `Driver recorded short pick with a reason (status ${pickedRiceStatus})`);
   await api(`/transfers/${transfer.id}/picked-qty`, { method: 'POST', token: driverToken, body: { productId: MILK, pickedQty: pickedMilk } });
 
   const { status: dispatchStatus } = await api(`/transfers/${transfer.id}/dispatch`, { method: 'POST', token: driverToken });

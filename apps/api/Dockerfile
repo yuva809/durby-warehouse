@@ -10,6 +10,10 @@ RUN npm ci
 FROM deps AS build
 WORKDIR /app
 COPY . .
+# prisma.config.ts validates DATABASE_URL is set even for `generate`, which
+# never actually connects to a database — a placeholder is enough here. The
+# real DATABASE_URL is injected at container runtime (see docker-compose.yml).
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 RUN npx prisma generate
 RUN npm run build
 

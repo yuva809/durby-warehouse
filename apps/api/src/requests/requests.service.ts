@@ -18,9 +18,19 @@ export class RequestsService {
     private activity: ActivityService,
   ) {}
 
+  /**
+   * Branch scoping (own branch only) AND driver exclusion — a driver works
+   * off Transfers, never StockRequests directly (list() below already
+   * returns [] for them; this is the same rule applied to direct-by-id
+   * access, matching how transfers.service.ts's assertAccess treats both
+   * roles explicitly rather than only checking one of them).
+   */
   private async assertBranchAccess(user: AuthUser, branchId: string) {
     if (user.role === 'BRANCH_USER' && user.locationId !== branchId) {
       throw new ForbiddenException("You don't have access to this branch");
+    }
+    if (user.role === 'DRIVER') {
+      throw new ForbiddenException('Drivers do not have access to stock requests');
     }
   }
 
@@ -50,7 +60,12 @@ export class RequestsService {
   async get(id: string, user: AuthUser) {
     const request = await this.prisma.stockRequest.findUnique({
       where: { id },
-      include: { items: { include: { product: true } }, branch: true, transfer: { include: { items: true } } },
+      include: {
+        items: { include: { product: true } },
+        branch: true,
+        createdBy: { select: { name: true } },
+        transfer: { include: { items: true } },
+      },
     });
     if (!request) throw new NotFoundException('Request not found');
     await this.assertBranchAccess(user, request.branchId);
@@ -63,9 +78,11 @@ export class RequestsService {
     }
 
     const code = await this.codes.next('REQ');
+    const ocNumber = await this.codes.next('OC');
     const request = await this.prisma.stockRequest.create({
       data: {
         code,
+        ocNumber,
         branchId: user.locationId,
         createdById: user.userId,
         status: RequestStatus.PENDING,
@@ -76,7 +93,7 @@ export class RequestsService {
       include: { items: true, branch: true },
     });
 
-    await this.activity.log(`${request.branch.name} submitted ${code} (${dto.items.length} product${dto.items.length === 1 ? '' : 's'})`, 'request', user.userId);
+    await this.activity.log(`${request.branch.name} submitted ${ocNumber} (${dto.items.length} product${dto.items.length === 1 ? '' : 's'})`, 'request', user.userId);
     return request;
   }
 
@@ -97,16 +114,23 @@ export class RequestsService {
       where: { requestId_productId: { requestId: id, productId } },
       data: { approvedQty },
     });
-    await this.activity.log(`Quantity adjusted for ${request.code}: approved ${approvedQty}`, 'review', user.userId);
+    await this.activity.log(`Quantity adjusted for ${request.ocNumber}: approved ${approvedQty}`, 'review', user.userId);
     return this.get(id, user);
   }
 
   /**
-   * The critical transaction. Reserves stock for every line item in ONE
-   * database transaction: if any line's available stock can't cover its
-   * approved quantity, InventoryService.reserve throws and the whole
-   * transaction — including any lines already reserved earlier in this
-   * same loop — rolls back. Nothing is approved "partially" by accident.
+   * The critical transaction. The PENDING/REVIEWING -> APPROVED transition
+   * is claimed with a single conditional UPDATE ("WHERE status IN
+   * (PENDING, REVIEWING)") *before* anything else happens — not the
+   * Transfer.requestId unique constraint, which used to be the only thing
+   * standing between two concurrent approvals and a double reservation (it
+   * would have rolled the loser back, but only after it had already
+   * reserved stock and only by accident of an unrelated schema constraint,
+   * surfacing as a raw unhandled 500 instead of a clean 409). Now: whoever
+   * loses the race gets zero rows back from the claim and a ConflictException
+   * immediately, before reserve() is ever called — so a losing request never
+   * touches inventory at all. Reservation and transfer creation only happen
+   * after the claim succeeds, and the whole thing is still one transaction.
    */
   async approve(id: string, user: AuthUser) {
     if (user.role !== 'WAREHOUSE_MANAGER' && user.role !== 'SUPER_ADMIN') {
@@ -116,11 +140,24 @@ export class RequestsService {
     const warehouse = await this.getWarehouse();
 
     const transfer = await this.prisma.$transaction(async (tx) => {
-      const request = await tx.stockRequest.findUniqueOrThrow({
+      const request = await tx.stockRequest.findUnique({
         where: { id },
         include: { items: true, branch: true },
       });
+      if (!request) throw new NotFoundException('Request not found');
       if (!REVIEWABLE.includes(request.status)) {
+        throw new ConflictException(`Cannot approve a request in status ${request.status}`);
+      }
+
+      // Atomic claim — the actual concurrency guard, evaluated before any
+      // stock is touched.
+      const claimed = await tx.$queryRaw<{ id: string }[]>`
+        UPDATE "StockRequest"
+        SET "status" = 'APPROVED'::"RequestStatus", "reviewedById" = ${user.userId}, "reviewedAt" = now(), "updatedAt" = now()
+        WHERE "id" = ${id} AND "status" IN ('PENDING', 'REVIEWING')
+        RETURNING "id"
+      `;
+      if (claimed.length === 0) {
         throw new ConflictException(`Cannot approve a request in status ${request.status}`);
       }
 
@@ -154,16 +191,14 @@ export class RequestsService {
         });
       }
 
-      await tx.stockRequest.update({
-        where: { id },
-        data: { status: RequestStatus.APPROVED, reviewedById: user.userId, reviewedAt: new Date() },
-      });
-
-      return { ...createdTransfer, requestCode: request.code, branchName: request.branch.name };
+      return { ...createdTransfer, requestOcNumber: request.ocNumber, branchName: request.branch.name };
     });
 
-    await this.activity.log(`Transfer ${transfer.code} created for ${transfer.branchName}`, 'transfer', user.userId);
-    await this.activity.log(`Warehouse Manager approved ${transfer.requestCode}`, 'review', user.userId);
+    // No dcNumber yet — it's only assigned at dispatch() — so the delivery
+    // is referenced by the order it belongs to, never by the internal TR-
+    // code, matching the "OC = order, DC = delivery" customer-facing rule.
+    await this.activity.log(`Transfer created for ${transfer.branchName} (Order ${transfer.requestOcNumber})`, 'transfer', user.userId);
+    await this.activity.log(`Warehouse Manager approved ${transfer.requestOcNumber}`, 'review', user.userId);
 
     return transfer;
   }
@@ -180,7 +215,7 @@ export class RequestsService {
       where: { id },
       data: { status: RequestStatus.REJECTED, rejectionReason: reason, reviewedById: user.userId, reviewedAt: new Date() },
     });
-    await this.activity.log(`Warehouse Manager rejected ${updated.code}`, 'review', user.userId);
+    await this.activity.log(`Warehouse Manager rejected ${updated.ocNumber}`, 'review', user.userId);
     return updated;
   }
 
@@ -197,7 +232,7 @@ export class RequestsService {
       where: { id },
       data: { status: RequestStatus.CANCELLED, cancelledAt: new Date() },
     });
-    await this.activity.log(`${updated.code} cancelled by the branch`, 'review', user.userId);
+    await this.activity.log(`${updated.ocNumber} cancelled by the branch`, 'review', user.userId);
     return updated;
   }
 }

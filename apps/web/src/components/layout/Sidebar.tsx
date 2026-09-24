@@ -10,6 +10,8 @@ import {
   Activity,
   Map,
   X,
+  FileText,
+  FileUp,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { LogoMark } from './LogoMark'
@@ -23,12 +25,20 @@ import type { Role } from '../../types'
 // control regardless of what's shown here (see apps/api's RolesGuard).
 const NAV: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean; roles?: Role[] }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  // Same label, two different destinations — a branch user only ever sees
+  // the /shop entry (category browsing + cart), a manager/admin only ever
+  // sees /inventory (stock levels); the role filter below means only one of
+  // these ever renders for a given user, so there's no real duplication.
   { to: '/inventory', label: 'Inventory', icon: Boxes, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/shop', label: 'Inventory', icon: Boxes, roles: ['BRANCH_USER'] },
   { to: '/products', label: 'Products', icon: Package, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/branches', label: 'Branches', icon: Store, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
-  { to: '/requests', label: 'Stock Requests', icon: ClipboardList, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER', 'BRANCH_USER'] },
+  { to: '/stock-intake', label: 'Stock Intake', icon: FileUp, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/requests', label: 'Stock Requests', icon: ClipboardList, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/requests', label: 'My Orders', icon: ClipboardList, roles: ['BRANCH_USER'] },
   { to: '/transfers', label: 'Transfers', icon: ArrowLeftRight, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/deliveries', label: 'Deliveries', icon: Truck, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER', 'DRIVER'] },
+  { to: '/documents', label: 'Documents', icon: FileText, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/activity', label: 'Activity', icon: Activity, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/roadmap', label: 'Roadmap', icon: Map },
 ]
@@ -58,9 +68,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
               <LogoMark className="h-full w-full" />
             </div>
             <div>
-              <div className="font-display text-lg font-extrabold tracking-tight text-white leading-none">DURBY</div>
+              <div className="font-display text-lg font-extrabold tracking-tight text-white leading-none">ASIA MIGHT</div>
               <div className="text-[11px] font-medium text-ink-400 tracking-wide leading-none mt-1">
-                Warehouse &amp; Inventory
+                Super Market
               </div>
             </div>
           </div>
@@ -97,8 +107,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="mx-3 mb-4 shrink-0 rounded-xl bg-white/5 px-4 py-3.5">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-300">V2</div>
           <p className="mt-1 text-xs leading-relaxed text-ink-400">
-            Backed by the real Durby Warehouse API — inventory, requests, and
-            deliveries are now live in PostgreSQL.
+            Backed by the real Asia Might Super Market API — inventory, requests,
+            and deliveries are now live in PostgreSQL.
           </p>
         </div>
       </aside>

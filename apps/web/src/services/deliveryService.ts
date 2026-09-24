@@ -5,8 +5,8 @@ export const deliveryService = {
   startPicking(transferId: string): Promise<Transfer> {
     return api.post<Transfer>(`/transfers/${transferId}/start-picking`)
   },
-  setPickedQty(transferId: string, productId: string, pickedQty: number) {
-    return api.post(`/transfers/${transferId}/picked-qty`, { productId, pickedQty })
+  setPickedQty(transferId: string, productId: string, pickedQty: number, reason?: string) {
+    return api.post(`/transfers/${transferId}/picked-qty`, { productId, pickedQty, ...(reason ? { reason } : {}) })
   },
   /**
    * "Start Delivery." Turns the reservation into a real stock movement using

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LocationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { SAFE_USER_SELECT } from '../users/users.service';
 import type { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
 
 @Injectable()
@@ -49,6 +50,6 @@ export class LocationsService {
 
   async assignUser(locationId: string, userId: string) {
     await this.prisma.location.findUniqueOrThrow({ where: { id: locationId } });
-    return this.prisma.user.update({ where: { id: userId }, data: { locationId } });
+    return this.prisma.user.update({ where: { id: userId }, data: { locationId }, select: SAFE_USER_SELECT });
   }
 }

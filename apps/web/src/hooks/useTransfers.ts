@@ -28,6 +28,7 @@ function invalidateInventoryToo(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['inventory'] })
   qc.invalidateQueries({ queryKey: ['movements'] })
   qc.invalidateQueries({ queryKey: ['requests'] }) // request status mirrors transfer status
+  qc.invalidateQueries({ queryKey: ['warehouse-availability'] }) // dispatch can release units that weren't picked
 }
 
 export function useAssignDriver() {
@@ -58,8 +59,8 @@ export function useStartPicking() {
 export function useSetPickedQty() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ transferId, productId, pickedQty }: { transferId: string; productId: string; pickedQty: number }) =>
-      deliveryService.setPickedQty(transferId, productId, pickedQty),
+    mutationFn: ({ transferId, productId, pickedQty, reason }: { transferId: string; productId: string; pickedQty: number; reason?: string }) =>
+      deliveryService.setPickedQty(transferId, productId, pickedQty, reason),
     onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['transfers', 'detail', vars.transferId] }),
   })
 }
