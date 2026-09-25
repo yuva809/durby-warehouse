@@ -1,7 +1,7 @@
 import { Card } from '../components/ui/Card'
 import { useActivity } from '../hooks/useActivity'
 import { formatTime } from '../lib/utils'
-import { ClipboardList, Eye, ArrowLeftRight, Truck, Boxes, Settings, type LucideIcon } from 'lucide-react'
+import { ClipboardList, Eye, ArrowLeftRight, Truck, Boxes, Settings, ShieldCheck, type LucideIcon } from 'lucide-react'
 import type { ActivityEvent } from '../types'
 
 const KIND_META: Record<ActivityEvent['kind'], { icon: LucideIcon; className: string }> = {
@@ -11,6 +11,7 @@ const KIND_META: Record<ActivityEvent['kind'], { icon: LucideIcon; className: st
   delivery: { icon: Truck, className: 'bg-amber-50 text-amber-600' },
   inventory: { icon: Boxes, className: 'bg-emerald-50 text-emerald-600' },
   system: { icon: Settings, className: 'bg-ink-100 text-ink-500' },
+  security: { icon: ShieldCheck, className: 'bg-rose-50 text-rose-600' },
 }
 
 export default function Activity() {
@@ -29,7 +30,8 @@ export default function Activity() {
           <h3 className="mb-5 font-display text-sm font-semibold uppercase tracking-wide text-ink-400">{day}</h3>
           <div className="space-y-0">
             {events.map((a, i) => {
-              const meta = KIND_META[a.kind]
+              // An event kind this screen doesn't know yet must never blank the whole page: fall back to the generic icon.
+              const meta = KIND_META[a.kind] ?? KIND_META.system
               const Icon = meta.icon
               return (
                 <div key={a.id} className="flex gap-4">

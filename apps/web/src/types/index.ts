@@ -226,7 +226,7 @@ export interface Transfer {
 export interface ActivityEvent {
   id: string
   message: string
-  kind: 'request' | 'review' | 'transfer' | 'delivery' | 'inventory' | 'system'
+  kind: 'request' | 'review' | 'transfer' | 'delivery' | 'inventory' | 'system' | 'security'
   createdAt: string
   user?: { name: string } | null
 }
