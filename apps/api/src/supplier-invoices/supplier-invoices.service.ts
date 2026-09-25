@@ -11,7 +11,7 @@ import { PdfInvoiceParser } from './parsers/pdf.parser';
 import type { SupplierInvoiceParser } from './parsers/types';
 import { ImportMatchingService } from './matching.service';
 import { ProductImageQueueService } from '../product-images/product-image-queue.service';
-import { effectiveImageUrl } from '../product-images/image-url.util';
+import { displayImageUrl } from '../product-images/image-url.util';
 import type { UploadSupplierInvoiceDto } from './dto/supplier-invoice.dto';
 
 const OPEN_STATUSES: SupplierInvoiceStatus[] = [SupplierInvoiceStatus.DRAFT, SupplierInvoiceStatus.UNDER_REVIEW];
@@ -80,12 +80,13 @@ export class SupplierInvoicesService {
         ...item,
         product: item.product && {
           ...item.product,
-          // Manual uploads store bytes, not a URL — same effective-URL
-          // computation as ProductImagesService.toResponse, kept in sync
-          // manually since this is a read-only projection, not that service.
+          // Manual uploads store bytes, not a URL, and an unreviewed
+          // FOUND_NEEDS_REVIEW candidate gets no displayable URL — see
+          // displayImageUrl. status/confidence still flow through so the
+          // review screen can flag the line as pending.
           image: item.product.image && {
             ...item.product.image,
-            imageUrl: effectiveImageUrl(item.product.id, item.product.image),
+            imageUrl: displayImageUrl(item.product.id, item.product.image),
           },
         },
       })),

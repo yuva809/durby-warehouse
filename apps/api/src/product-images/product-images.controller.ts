@@ -35,8 +35,8 @@ export class ProductImagesController {
 
   @Roles(Role.SUPER_ADMIN, Role.WAREHOUSE_MANAGER)
   @Post('lookup')
-  lookup(@Param('productId') productId: string, @CurrentUser() user: AuthUser) {
-    return this.images.lookupAndSave(productId, user);
+  lookup(@Param('productId') productId: string) {
+    return this.images.lookupAndSave(productId);
   }
 
   @Roles(Role.SUPER_ADMIN, Role.WAREHOUSE_MANAGER)

@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
-import { effectiveImageUrl } from '../product-images/image-url.util';
+import { displayImageUrl } from '../product-images/image-url.util';
 import type { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 
 const IMAGE_SELECT = { select: { status: true, imageUrl: true, confidence: true } } as const;
 
 function withImageUrl<T extends { id: string; image: { status: string; imageUrl: string | null } | null }>(p: T) {
-  return { ...p, image: p.image && { ...p.image, imageUrl: effectiveImageUrl(p.id, p.image) } };
+  return { ...p, image: p.image && { ...p.image, imageUrl: displayImageUrl(p.id, p.image) } };
 }
 
 @Injectable()

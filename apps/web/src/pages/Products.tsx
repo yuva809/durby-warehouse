@@ -77,6 +77,11 @@ export default function Products() {
                 </div>
                 <div className="mt-3.5 font-display text-[15px] font-semibold text-ink-900">{p.name}</div>
                 <div className="text-xs text-ink-400">{p.brand ? `${p.brand} · ` : ''}{p.category}</div>
+                {p.image?.status === 'FOUND_NEEDS_REVIEW' && (
+                  <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                    Image pending review
+                  </div>
+                )}
                 <div className="mt-4 flex items-end justify-between">
                   <div>
                     <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">Total Stock</div>

@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ProductImageStatus, type ProductImage } from '@prisma/client';
+import { Prisma, ProductImageStatus, type ProductImage } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { bigramSimilarity, normalizeText } from '../common/text-similarity';
 import { effectiveImageUrl } from './image-url.util';
+import { isHumanDecided, shouldReplaceImage } from './image-state';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { OpenFoodFactsProvider } from './providers/open-food-facts.provider';
 import type { ProductImageCandidate, ProductImageProvider, ProductImageQuery } from './providers/types';
@@ -98,15 +99,18 @@ export class ProductImagesService {
    * in the worst case), because a failed image lookup must never block
    * product creation or stock intake.
    */
-  async lookupAndSave(productId: string, user?: AuthUser) {
+  async lookupAndSave(productId: string, options: { force?: boolean } = {}) {
+    const force = options.force ?? false;
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) throw new NotFoundException('Product not found');
 
     // Already verified or manually uploaded — "search again" is an
-    // explicit, separate action (see researchAgain below); a background
-    // enrichment pass must never clobber a human's decision.
+    // explicit, separate action (see searchAgain below, the only caller
+    // that passes force); a background enrichment pass must never clobber
+    // a human's decision. Re-checked under a row lock at write time too
+    // (see persist), since this early read can be stale by then.
     const existing = await this.prisma.productImage.findUnique({ where: { productId } });
-    if (existing && (existing.status === 'VERIFIED' || existing.status === 'MANUAL_UPLOAD')) {
+    if (existing && isHumanDecided(existing.status) && !force) {
       return this.toResponse(existing);
     }
 
@@ -156,6 +160,8 @@ export class ProductImagesService {
           matchedBarcode: result.candidate.matchedBarcode ?? null,
           attribution: result.candidate.attribution,
           fetchedAt: new Date(),
+          verifiedById: null,
+          verifiedAt: null,
         }
       : {
           status: ProductImageStatus.NOT_FOUND,
@@ -169,20 +175,56 @@ export class ProductImagesService {
           matchedBarcode: null,
           attribution: null,
           fetchedAt: new Date(),
+          verifiedById: null,
+          verifiedAt: null,
         };
 
-    const saved = await this.prisma.productImage.upsert({
-      where: { productId },
-      create: { productId, ...data },
-      update: data,
-    });
+    const saved = await this.persist(productId, data, { status: data.status, confidence: data.confidence }, force);
     return this.toResponse(saved);
   }
 
-  /** Explicit re-search — the only path allowed to overwrite a VERIFIED/MANUAL_UPLOAD image, since the manager asked for it directly. */
+  /**
+   * The only write path for a lookup result. Compare-and-write under a row
+   * lock: the stored row is re-read INSIDE the transaction (SELECT ... FOR
+   * UPDATE) and the incoming result only replaces it if shouldReplaceImage
+   * allows. That makes concurrent or stale jobs safe — a slow job that
+   * finished with nothing can no longer overwrite what a faster one found,
+   * and nothing here can clobber a manager's approve/upload that landed
+   * after this lookup started. If two jobs race to create the very first
+   * row, the loser hits the unique constraint and simply re-evaluates
+   * against the winner's row.
+   */
+  private async persist(
+    productId: string,
+    data: Omit<Prisma.ProductImageUncheckedCreateInput, 'productId'>,
+    incoming: { status: ProductImageStatus; confidence?: number | null },
+    force: boolean,
+  ): Promise<ProductImage> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT "id" FROM "ProductImage" WHERE "productId" = ${productId} FOR UPDATE`;
+          const existing = await tx.productImage.findUnique({ where: { productId } });
+          if (!existing) return tx.productImage.create({ data: { productId, ...data } });
+          if (!shouldReplaceImage(existing, incoming, force)) return existing;
+          return tx.productImage.update({ where: { productId }, data });
+        });
+      } catch (err) {
+        const lostCreateRace = err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+        if (!lostCreateRace || attempt >= 2) throw err;
+      }
+    }
+  }
+
+  /**
+   * Explicit re-search by a manager. Replaces whatever is stored — including
+   * a VERIFIED/MANUAL_UPLOAD image — but only with a real candidate: if the
+   * search finds nothing (or a provider is down), the existing image is kept
+   * rather than deleted first as this used to do. Removing an image is the
+   * separate, explicit remove() action.
+   */
   async searchAgain(productId: string) {
-    await this.prisma.productImage.deleteMany({ where: { productId } });
-    return this.lookupAndSave(productId);
+    return this.lookupAndSave(productId, { force: true });
   }
 
   /** Manager confirms a candidate is correct — AUTO_MATCHED or FOUND_NEEDS_REVIEW both become VERIFIED. This is the only status transition a manager triggers directly on an auto-found candidate. */

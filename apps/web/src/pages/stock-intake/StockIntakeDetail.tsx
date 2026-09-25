@@ -153,7 +153,12 @@ export default function StockIntakeDetail() {
                   </td>
                   <td className="px-3 py-3">
                     {item.productId ? (
-                      <ProductThumb src={item.product?.image?.imageUrl} size={32} iconSize={13} />
+                      <span className="relative inline-flex" title={item.product?.image?.status === 'FOUND_NEEDS_REVIEW' ? 'Image pending review' : undefined}>
+                        <ProductThumb src={item.product?.image?.imageUrl} size={32} iconSize={13} />
+                        {item.product?.image?.status === 'FOUND_NEEDS_REVIEW' && (
+                          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" aria-label="Image pending review" />
+                        )}
+                      </span>
                     ) : (
                       <span className="text-xs text-ink-300">—</span>
                     )}
