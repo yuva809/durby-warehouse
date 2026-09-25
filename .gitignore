@@ -23,4 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
-.env*
+
+# Environment files: real secrets are never committed, the templates are.
+.env
+.env.*
+!.env.example
+
+# Generated database backups (scripts/backup-db.sh) — contain real data.
+backups/
+*.sql.gz

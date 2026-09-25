@@ -18,11 +18,15 @@ DEPLOY.md    How to run this locally and on a Hetzner VPS
 ## Quick start
 
 ```bash
-cp .env.example .env      # edit values
+cp .env.example .env      # edit values (for demo data set SEED_DEMO_PASSWORD to 12+ characters)
 docker compose up -d --build
 docker compose exec backend npx prisma migrate deploy
-docker compose exec backend npm run seed
+set -a; . ./.env; set +a    # local demo data only — the seed refuses to run in production without explicit consent:
+docker compose exec -e ALLOW_DEMO_SEED=true -e SEED_DEMO_PASSWORD backend npm run seed
 ```
+
+(A real deployment is initialized differently — no demo data, first admin via `npm run bootstrap:admin` —
+see [DEPLOY.md](./DEPLOY.md) §5.)
 
 Frontend: http://localhost — API: http://api.localhost/api/health
 

@@ -17,6 +17,8 @@
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
     "bootstrap:admin": "tsx prisma/bootstrap-admin.ts",
+    "backfill:product-images": "tsx scripts/backfill-product-images.ts",
+    "test:backfill-product-images": "tsx scripts/backfill-product-images.test.ts",
     "test:trust-proxy": "tsx scripts/trust-proxy.test.ts",
     "test:product-image-state": "tsx scripts/product-image-state.test.ts",
     "test:product-image-display": "tsx scripts/product-image-display.test.ts",

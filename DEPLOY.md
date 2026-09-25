@@ -1,137 +1,396 @@
-# Deploying Durby Warehouse V2
+# Deploying Asia Might Super Market (Durby Warehouse V2)
 
-Single Hetzner CPX22 VPS, everything in Docker Compose:
-`reverse-proxy` (Caddy) → `frontend` / `backend` → `postgres`, `redis`, `worker`.
-No Kubernetes, no managed cloud services required.
+One Hetzner VPS, everything in Docker Compose:
 
-> **Current phase: local development only.** Sections 2–4 (Hetzner) are here
-> for when we're ready, but are *not* the current priority — see the project
-> status report. Build, run, and test everything locally first with the same
-> Docker Compose stack; only the domain/DNS/TLS pieces differ for the VPS.
+```
+Internet ─► 80/443 ─► reverse-proxy (Caddy, automatic HTTPS)
+                        ├─► frontend  (nginx, static React build)
+                        └─► backend   (NestJS API) ─► postgres, redis, ocr
+                            worker    (same image, BullMQ queues) ─► postgres, redis
+```
+
+No Kubernetes and no managed services. **Only Caddy is reachable from the internet.**
+Postgres, Redis, the backend and the OCR service are on a private Docker network;
+their loopback-only host ports (`127.0.0.1:…`) exist for debugging on the server itself.
+
+> Nothing in this file contains a secret. Real values live only in the server's
+> `.env` (git-ignored, mode 600). Never paste secrets into chat, tickets or commits.
 
 ## 1. Local development
 
 ```bash
-cp .env.example .env      # edit values — local defaults are fine except passwords
+cp .env.example .env      # then edit: for local use set VITE_SHOW_DEMO_LOGINS=true and a SEED_DEMO_PASSWORD (12+ chars)
 docker compose up -d --build
 docker compose exec backend npx prisma migrate deploy
-docker compose exec backend npm run seed
+# Demo data (9 demo users, 6 locations, 47 products). The backend container always runs with
+# NODE_ENV=production, so the seed fails closed unless you explicitly consent and supply a strong password:
+set -a; . ./.env; set +a
+docker compose exec -e ALLOW_DEMO_SEED=true -e SEED_DEMO_PASSWORD backend npm run seed
 ```
+
+`SEED_DEMO_PASSWORD` must be at least 12 characters and **not** the public default `ChangeMe123!` — that is
+deliberate, so that this command can never quietly create well-known logins on a real server. (The frontend's
+demo quick-login uses the same value, so rebuild the frontend after changing it.) Running the seed from a host
+checkout with `NODE_ENV` unset, e.g. `cd apps/api && DATABASE_URL=postgresql://…@localhost:5433/… npm run seed`,
+still works as before with the default demo password.
+
+**Never seed a real deployment.** See §5 for production initialization.
 
 Frontend: http://localhost — API: http://api.localhost/api — Health: http://api.localhost/api/health
 
-(macOS/Linux resolve `*.localhost` to 127.0.0.1 automatically for browsers and `curl`. Node's own DNS resolver doesn't always do the same RFC 6761 handling — if a Node script gets `ENOTFOUND api.localhost`, point it at the backend's direct loopback port instead, e.g. `API_BASE=http://localhost:3001`. On Windows, add `127.0.0.1 api.localhost` to your hosts file if it doesn't resolve at all.)
+(Browsers and `curl` resolve `*.localhost` automatically. If a Node script gets
+`ENOTFOUND api.localhost`, use the backend's loopback port instead:
+`API_BASE=http://localhost:3001 node scripts/e2e-smoke-test.mjs`.)
 
-Log in with any seeded account (see `apps/api/prisma/seed.ts`) — the Login page also shows a "Demo accounts" quick-login list in dev (gated by `VITE_SHOW_DEMO_LOGINS`, on by default locally — **must be turned off before any real deployment**, see the checklist below).
+Local checks:
 
-Run the full scenario check against the running stack:
 ```bash
-node scripts/e2e-smoke-test.mjs
-# or, if Node can't resolve api.localhost on your machine:
-API_BASE=http://localhost:3001 node scripts/e2e-smoke-test.mjs
+node scripts/e2e-smoke-test.mjs                # request → transfer → delivery workflow + concurrency
+./scripts/rate-limit-proxy-test.sh             # per-client rate limiting through Caddy (local stack only)
+cd apps/api && npm run test:trust-proxy        # no DB/Docker needed
+# these need DATABASE_URL pointing at the stack's Postgres (e.g. postgresql://…@localhost:5433/…):
+npm run test:product-image-state && npm run test:product-image-display && npm run test:backfill-product-images
 ```
 
-### Standalone frontend dev (hot reload)
+Standalone frontend with hot reload:
 
 ```bash
-docker compose up -d backend postgres redis worker   # everything except frontend/proxy
+docker compose up -d backend postgres redis worker ocr
 cd apps/web && cp .env.example .env.local && npm run dev
 ```
 
-The backend's loopback port is `3001` (not `3000`) — a very common dev-server
-port that's often already taken by another project on the same machine.
-`apps/web/.env.example`'s `VITE_API_URL` already points at it.
+## 2. The server (already provisioned)
 
----
+Hetzner VPS: Ubuntu 26.04 LTS (x86_64), 2 vCPU, 4 GB RAM, ~75 GB disk. State as configured:
 
-## 2. Provision the Hetzner CPX22 — LATER, not now
+| Area | Setting |
+|---|---|
+| Admin access | Non-root sudo user `yuvanesh`, SSH public-key login only |
+| SSH | `/etc/ssh/sshd_config.d/10-hardening.conf`: `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `PermitRootLogin no` |
+| Firewall | UFW active: deny incoming; allow 22/tcp, 80/tcp, 443/tcp (IPv4 + IPv6) |
+| Docker | Docker Engine + Compose plugin from **Docker's official apt repository** (Ubuntu `resolute` is supported), service enabled at boot |
 
-1. Create a CPX22 (2 vCPU / 4 GB RAM / 40 GB disk is enough to start) — Ubuntu 24.04 image.
-2. Point DNS: `A` records for your two domains (e.g. `warehouse.example.com` and `api.warehouse.example.com`) → the server's IP. Caddy needs both resolving *before* it can issue certificates.
-3. SSH in, then install Docker:
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   ```
-   (Docker Compose v2 ships as the `docker compose` plugin with that installer — no separate install needed.)
-4. Open the firewall for 80/443 only (nothing else — Postgres/Redis are never internet-facing):
-   ```bash
-   ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable
-   ```
+Log in with `ssh yuvanesh@<SERVER_IP>` and use `sudo`. `yuvanesh` is deliberately **not** in the
+`docker` group (that is root-equivalent), so run Docker commands with `sudo`.
 
-## 3. Deploy — LATER, not now
+Quick health check of the baseline:
 
 ```bash
-git clone https://github.com/<you>/durby-warehouse.git
-cd durby-warehouse
-cp .env.example .env
+sudo ufw status verbose
+sudo sshd -T | grep -E '^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication) '
+docker --version && docker compose version
+ss -tlnp | grep -v 127.0.0        # only 22 (and, once deployed, 80/443) should be listening publicly
 ```
 
-Edit `.env` — production checklist:
-- [ ] `FRONTEND_DOMAIN` / `API_DOMAIN` / `VITE_API_URL` / `FRONTEND_URL` → your real domains from step 2.
-- [ ] `POSTGRES_PASSWORD`, `JWT_SECRET` → generate real random values (`openssl rand -base64 48`), never the example placeholders.
-- [ ] `VITE_SHOW_DEMO_LOGINS=false` — **do not ship the quick-login account list to a real deployment.**
-- [ ] `SEED_DEMO_PASSWORD` → set something you'll actually use, or leave default and change it immediately after first login (there's no "change password" UI yet, so for a real deployment either seed with the password you intend to keep, or reset it directly in the DB).
+To rebuild an equivalent server from scratch, follow Docker's official instructions for Ubuntu
+(<https://docs.docker.com/engine/install/ubuntu/>, "Install using the apt repository") rather than the
+`get.docker.com` convenience script.
+
+> **Docker bypasses UFW for published ports.** UFW will not block a port Compose publishes as
+> `"5432:5432"`. That is why every non-Caddy port in `docker-compose.yml` is bound to `127.0.0.1`.
+> **Never remove the `127.0.0.1:` prefix**, and never add a new public `ports:` entry without deciding
+> that the service really should face the internet. To reach Postgres from your laptop, use an SSH
+> tunnel: `ssh -L 5433:127.0.0.1:5433 yuvanesh@<SERVER_IP>`.
+
+### Recommended before the first real load (not applied yet)
+
+The server has 4 GB RAM and no swap; PaddleOCR inference plus Postgres, Redis, the API and worker can
+exhaust it. Add a swap file:
 
 ```bash
-docker compose up -d --build
-docker compose exec backend npx prisma migrate deploy
-docker compose exec backend npm run seed
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-## 4. Verify — LATER, not now
+Docker's default log driver keeps logs forever; cap them in `/etc/docker/daemon.json`
+(`{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"}}`, then `sudo systemctl restart docker`).
+
+## 3. DNS
+
+Caddy needs both names resolving to the server **before** it can issue certificates:
+
+- `A` record: `app.example.com` → `<SERVER_IP>`
+- `A` record: `api.app.example.com` → `<SERVER_IP>` (add matching `AAAA` records only if you also want IPv6)
+
+Ports 80 and 443 must be reachable from the internet (UFW already allows them); Caddy uses port 80
+for the Let's Encrypt HTTP challenge.
+
+## 4. Deploy
+
+**A real deployment uses real client data only. Nothing here creates demo users, branches or products, and
+there is no default password anywhere.** Prepare the server's `.env` first, then follow §5.
+
+On the server:
 
 ```bash
-curl https://api.warehouse.example.com/api/health
-# {"status":"ok","info":{"database":{"status":"up"},"redis":{"status":"up"}},...}
-
-curl -I https://warehouse.example.com
-# HTTP/2 200 — and check the cert: browsers should show it as valid, issued by Let's Encrypt (via Caddy's automatic ACME)
+git clone https://github.com/yuva809/durby-warehouse.git && cd durby-warehouse
+umask 077 && cp .env.example .env          # .env must not be world-readable
 ```
 
-If a domain doesn't get a certificate, check `docker compose logs reverse-proxy` — almost always a DNS record that hasn't propagated yet, or port 80 not reachable from the internet (Caddy needs it for the ACME HTTP challenge).
+Edit `.env` (`nano .env`). Everything below is required for production:
 
-## 5. First admin login
+| Variable | Value |
+|---|---|
+| `FRONTEND_DOMAIN`, `API_DOMAIN` | Bare domains, no scheme (e.g. `app.example.com`, `api.app.example.com`) |
+| `VITE_API_URL` | `https://<API_DOMAIN>/api` (baked into the frontend at build time) |
+| `FRONTEND_URL` | `https://<FRONTEND_DOMAIN>` (CORS origin) |
+| `POSTGRES_USER`, `POSTGRES_DB` | Your choice |
+| `POSTGRES_PASSWORD` | **Generate** (below) |
+| `JWT_SECRET` | **Generate**, at least 32 characters (below) |
+| `REDIS_PASSWORD` | **Generate** (below). If unset, Redis falls back to a publicly known placeholder |
+| `VITE_SHOW_DEMO_LOGINS` | **`false`**. `true` ships a one-click demo-accounts list to your login page |
 
-The seed script already creates `admin@durby.tech` (`SUPER_ADMIN`) with the password from `SEED_DEMO_PASSWORD`:
+Do **not** set `SEED_DEMO_PASSWORD`; it belongs to the local demo seed only (§1).
+
+Generate secrets **without printing them** by writing straight into the file:
 
 ```bash
-curl -X POST http://api.localhost/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@durby.tech","password":"<your SEED_DEMO_PASSWORD>"}'
+sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=\n')|" .env
+sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=\n')|" .env
+sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')|" .env
+chmod 600 .env
 ```
 
-That returns a JWT you can use to create real users via `POST /api/users` (see the full endpoint list in the project's status report / README).
+(`base64` can contain `/`, `+`, `=`. The database and Redis passwords are stripped of them so they stay safe
+inside the connection URL; `JWT_SECRET` isn't used in a URL and can keep them.) Keep an offline copy of `.env`
+in your password manager: losing `POSTGRES_PASSWORD` locks you out of the existing database volume.
 
-## 6. Back up and restore Postgres
+## 5. Initialize production (no demo data)
 
-Works the same locally or on the VPS:
+The order matters; each step depends on the one before.
+
+**1. Build and start.** The first build downloads the OCR models and takes several minutes.
+
 ```bash
-./scripts/backup-db.sh                      # writes ./backups/durby-warehouse-<timestamp>.sql.gz, keeps last 14
+sudo docker compose up -d --build
+sudo docker compose ps                     # wait until backend, postgres, redis, ocr show "healthy"
+```
+
+**2. Create the schema.** Migrations are never run automatically. This also inserts the reference data the app
+needs (the `REQ`/`TR`/`OC`/`DC`/`INV` number sequences); it is safe to repeat on every deploy.
+
+```bash
+sudo docker compose exec backend npx prisma migrate deploy
+```
+
+**3. Create the first administrator (one time).** This is the *only* way a first admin can exist: every API route
+that creates users needs an already-logged-in administrator, and there is deliberately no public sign-up or
+admin-creation endpoint. Run it in an interactive terminal, with your own real email and name. The password is
+typed at a hidden prompt, entered twice, and stored only as a bcrypt hash:
+
+```bash
+sudo docker compose exec -e ADMIN_EMAIL=you@yourcompany.com -e "ADMIN_NAME=Your Name" backend npm run bootstrap:admin
+```
+
+- `ADMIN_EMAIL` must already be lowercase (login is a case-sensitive exact match).
+- The password needs 12+ characters, and can't be a known default (including `ChangeMe123!`), contain your email name, or be repetitive.
+- It shows the target database and makes you type the database name to confirm before writing anything.
+- **It only runs on a database with no users at all.** If any user exists, whether a previous admin, a demo-seeded
+  database, or a restored backup, it changes nothing and exits with code 3. So a rerun, a second operator, or a
+  mistaken run against a live system is a harmless no-op, and two simultaneous runs can't both succeed.
+- It needs the schema from step 2 and says so if it's missing.
+- For automation only, set `ADMIN_PASSWORD` and `BOOTSTRAP_CONFIRM_DB=<database name>` instead of using the prompt
+  (`docker compose exec -e ADMIN_PASSWORD -e BOOTSTRAP_CONFIRM_DB …`, exporting them from a protected file, not typing the password on the command line).
+
+**4. Log in and load your real data (first data).** Sign in to the web app with the admin. The web app has no screens for
+users, locations or categories yet, so create those with the API using the helpers below (they prompt for
+passwords, so no password lands in your shell history), then add the rest in the app. Run on the server or any
+machine that can reach the API:
+
+```bash
+export API=https://<API_DOMAIN>/api ADMIN_EMAIL=you@yourcompany.com
+login() {   # prints a token; asks for the password without echo
+  python3 -c 'import getpass,json,os,urllib.request as u
+pw=getpass.getpass("Password for "+os.environ["ADMIN_EMAIL"]+": ")
+r=u.Request(os.environ["API"]+"/auth/login",data=json.dumps({"email":os.environ["ADMIN_EMAIL"],"password":pw}).encode(),headers={"Content-Type":"application/json"})
+print(json.load(u.urlopen(r))["accessToken"])'
+}
+api() { curl -sS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; echo; }
+create_user() {   # create_user email "Full Name" ROLE [locationId]; the new user's password is prompted
+  read -rsp "Password for $1: " NEWPW; echo >&2
+  EMAIL="$1" NAME="$2" ROLE="$3" LOC="${4:-}" NEWPW="$NEWPW" python3 -c 'import json,os
+d={"email":os.environ["EMAIL"],"name":os.environ["NAME"],"password":os.environ["NEWPW"],"role":os.environ["ROLE"]}
+if os.environ["LOC"]: d["locationId"]=os.environ["LOC"]
+print(json.dumps(d))' | api -X POST "$API/users" --data @-
+  unset NEWPW
+}
+TOKEN=$(login); export TOKEN          # tokens expire (JWT_EXPIRES_IN, default 12h): run this again when they do
+```
+
+Then, in this order (each command prints the created record including its `id`):
+
+```bash
+# 1. The warehouse. The app looks up the location of type WAREHOUSE, so this must exist before anything else works.
+api -X POST $API/locations -d '{"name":"Central Warehouse","type":"WAREHOUSE","city":"<city>"}'
+# 2. Each branch (note the returned ids)
+api -X POST $API/locations -d '{"name":"<branch name>","shortName":"<short>","type":"BRANCH","city":"<city>"}'
+# 3. Product categories. The Add Product screen needs at least one; a new database has none.
+api -X POST $API/categories -d '{"name":"<category name>"}'
+# 4. People (roles: WAREHOUSE_MANAGER, BRANCH_USER (needs the branch's locationId), DRIVER). Never reuse a password.
+create_user manager@yourcompany.com "Name" WAREHOUSE_MANAGER
+create_user branch1@yourcompany.com "Name" BRANCH_USER <branch-location-id>
+create_user driver1@yourcompany.com "Name" DRIVER
+```
+
+Add products from the **Products → Add Product** screen (or `POST /products`), and receive stock through
+**Stock Intake**. Creating a location also creates zeroed inventory rows for the existing products. A warehouse manager can
+create branch and driver accounts, but only a `SUPER_ADMIN` can create another `SUPER_ADMIN`.
+
+**Recommended:** create a second `SUPER_ADMIN` (`create_user backup-admin@yourcompany.com "Name" SUPER_ADMIN`) and store its password offline.
+There is no password-reset feature yet, so a second admin is your recovery path if the first password is lost.
+
+**5. Verify and back up (§6, §8).** Take and test-restore a backup *before* real data goes in.
+
+### What NOT to do
+
+- **Do not run `npm run seed` on a real deployment.** It creates demo users, branches and products, and resets
+  their stock. In the production container it refuses: it exits with an error unless `ALLOW_DEMO_SEED=true`
+  *and* a strong `SEED_DEMO_PASSWORD` are set, and even then it refuses any database that already holds
+  non-demo data. Those switches exist only for a throwaway staging server; the public default password is
+  never accepted in production.
+- Do not run `bootstrap:admin` to "reset" anything. It only ever creates the first administrator.
+- If a database was ever demo-seeded by mistake, don't try to clean it in place: drop it and start from step 2 (or restore a good backup).
+
+### Product image backfill: not needed for launch
+
+Product images are cosmetic catalog enrichment that never gates ordering, stock or invoices. Manual **Find Image** per
+product in the product drawer is sufficient at launch, and the `backfill-product-images` script is **not required**.
+
+- On a fresh database there is nothing to backfill until products exist, and products added through **Add Product** are
+  not looked up automatically. A lookup is only triggered by a manager's **Find Image** click or by a product being matched on a
+  supplier invoice, so the catalog fills in as invoices are processed.
+- Open Food Facts has limited coverage of generic grocery items. When the 47-product demo catalog was backfilled
+  locally, only 2 of 47 matched confidently, 9 more landed in "pending review" and 36 were "not found". A bulk backfill would mostly produce rows a manager must handle by hand anyway.
+- The script (`apps/api/scripts/backfill-product-images.ts`) isn't in the production image (only compiled
+  `dist/` and `prisma/` ship). If you later load a large catalog and want it, run it from a checkout with Node 22
+  (`cd apps/api && npm ci`) through the loopback-published ports; this hasn't been exercised on the server:
+
+```bash
+cd apps/api && set -a && . ../../.env && set +a
+DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:5433/$POSTGRES_DB" \
+REDIS_HOST=127.0.0.1 REDIS_PORT=6379 npm run backfill:product-images
+```
+
+## 6. Verify
+
+```bash
+curl -s https://<API_DOMAIN>/api/health          # {"status":"ok", database up, redis up}
+curl -sI https://<FRONTEND_DOMAIN> | head -3      # HTTP/2 200 with a valid Let's Encrypt certificate
+```
+
+If a certificate isn't issued, check `sudo docker compose logs reverse-proxy`. It is almost always DNS that
+hasn't propagated, or port 80 not reachable.
+
+Security checks worth doing once after the first deploy:
+
+```bash
+# Nothing but 22/80/443 listening publicly:
+ss -tlnp | grep -v 127.0.0
+# The shipped JavaScript must not contain demo credentials (want: 0 and 0):
+sudo docker compose exec frontend sh -c "grep -rlF 'ChangeMe123' /usr/share/nginx/html | wc -l; grep -rli 'demo accounts' /usr/share/nginx/html | wc -l"
+# Login page shows no "Demo accounts" list; a wrong-password login returns 401, and the 6th in a minute returns 429.
+```
+
+### Rate limiting and the reverse proxy
+
+Login is limited to 5 attempts/minute and everything else to 120 requests/minute, **per client IP**.
+The API only believes `X-Forwarded-For` from Caddy: `docker-compose.yml` pins the `internal` network
+(`172.28.0.0/24`), gives Caddy the fixed address `172.28.0.10`, and sets `TRUST_PROXY=172.28.0.10` on the
+backend. Consequences:
+
+- Keep the `reverse-proxy` `ipv4_address` and the backend's `TRUST_PROXY` identical.
+- `TRUST_PROXY` accepts only literal IPs/CIDRs (never `true`, hop counts or `/0`); unset means "trust
+  nothing" and the direct peer's address is used.
+- If `172.28.0.0/24` collides with another network on your host, change the subnet, the fixed address and
+  `TRUST_PROXY` together.
+- After changing Compose network settings on an already-running stack, run
+  `sudo docker compose up -d --force-recreate` (data volumes are kept); otherwise service names may
+  stop resolving until the containers are recreated.
+
+## 7. OCR (scanned invoices)
+
+`apps/ocr` (PaddleOCR) is only called when an uploaded PDF has no usable text layer. It runs
+`linux/amd64`, which is native on this server. **Successful OCR inference has never been verified**:
+it crashed or hung under Apple Silicon emulation during development. After the first deploy, upload a
+scanned invoice PDF on the Stock Intake screen and confirm text comes back. If OCR fails or times out (90 s)
+the upload is refused with a clean message and nothing is created, and CSV/XLSX and text PDFs are unaffected.
+Two properties to know: while an OCR request runs, the OCR container's `/health` may not respond
+(the container can show "unhealthy" but is not restarted), and scans are processed one at a time.
+
+## 8. Back up and restore Postgres
+
+```bash
+./scripts/backup-db.sh                         # ./backups/durby-warehouse-<timestamp>.sql.gz, keeps the last 14
 ./scripts/restore-db.sh ./backups/durby-warehouse-<timestamp>.sql.gz
 ```
 
-On the VPS, put the backup on a cron (daily is reasonable at this scale):
+(Run with `sudo` if your user can't use Docker. The scripts read `.env`.)
+
+**What a backup contains, and what it doesn't**
+
+- It is a `pg_dump` of the application database only: all business data, every user's **bcrypt password hash**, and
+  uploaded product image bytes. It contains **none of the `.env` secrets** (no `POSTGRES_PASSWORD`, `JWT_SECRET` or
+  `REDIS_PASSWORD`; checked). Redis isn't backed up; it only holds job queues and rate-limit counters.
+- Because it holds real data and password hashes, backups are created private (files `600`, a new `backups/` directory `700`) and
+  `backups/` is git-ignored. Treat every copy as sensitive, and encrypt it if it leaves the server.
+- Keep `.env` in your password manager separately; it is not in the backup, and you need it to bring the stack up.
+
+Daily cron on the server (`sudo crontab -e`; adjust the path):
+
 ```
-0 3 * * * cd /path/to/durby-warehouse && ./scripts/backup-db.sh >> /var/log/durby-backup.log 2>&1
+0 3 * * * cd /home/yuvanesh/durby-warehouse && ./scripts/backup-db.sh >> /var/log/durby-backup.log 2>&1
 ```
 
-**Copy backups off the VPS regularly** (e.g. `rsync`/`rclone` to another machine or object storage) — a backup that only lives on the same disk as the database doesn't protect against the VPS itself being lost.
+**Copy backups off the server** (rsync/rclone to another machine or object storage): a backup on the same
+disk as the database doesn't survive losing the server.
 
-## 7. Updating
+**Restoring into a fresh production database** (server lost or rebuilt) works on a brand-new, empty database, since
+the dump carries the schema, the migration history and the document-number counters, so `REQ-`/`OC-` numbering continues where
+it left off. Order:
+
+1. Bring up the stack on the new server: prepare `.env` as in §4, then `docker compose up -d --build` (§5 step 1).
+   A new `POSTGRES_PASSWORD` is fine; it initializes the new volume. Wait for it to be healthy.
+2. **Do not** run `bootstrap:admin` or the seed. Your users come from the backup.
+3. `./scripts/restore-db.sh <backup>` (type the database name to confirm).
+4. `sudo docker compose exec backend npx prisma migrate deploy` (applies any migrations newer than the backup; no-op otherwise),
+   then `sudo docker compose restart backend worker`.
+5. If `JWT_SECRET` differs from the old server, everyone simply has to log in again.
+
+`restore-db.sh` is **destructive** (it replaces the live database, and asks you to type the database name). It's
+all-or-nothing: it runs in a single transaction and stops at the first SQL error, so a corrupt or truncated backup fails loudly and leaves
+the current database untouched rather than half-restored.
+
+To prove a backup is usable **without touching live data**, restore it into a scratch database and compare:
 
 ```bash
-git pull
-docker compose up -d --build
-docker compose exec backend npx prisma migrate deploy
+set -a; . ./.env; set +a
+sudo docker compose exec -T postgres createdb -U "$POSTGRES_USER" restore_test
+gunzip -c backups/<file>.sql.gz | sudo docker compose exec -T postgres psql -U "$POSTGRES_USER" -d restore_test -q -v ON_ERROR_STOP=1 --single-transaction
+sudo docker compose exec -T postgres psql -U "$POSTGRES_USER" -d restore_test -c 'select count(*) from "Product"'
+sudo docker compose exec -T postgres dropdb -U "$POSTGRES_USER" restore_test
 ```
 
-`migrate deploy` only applies new migrations — it's safe to run every deploy, including when there's nothing new.
+Do this once before relying on the backups, and again occasionally.
 
-## Known limitations (be aware of these before relying on this in production)
+## 9. Updating
 
-- **No password reset / user-management UI.** Users are created via the API directly (`POST /api/users`) or the seed script; there's no frontend for it yet.
-- **The Login page's demo-account quick-login list must be disabled** (`VITE_SHOW_DEMO_LOGINS=false`) before any real deployment — see the production checklist above.
-- **Login is rate-limited to 5 attempts/minute per IP** (`@Throttle` on `/auth/login`) — intentional brute-force protection, but worth knowing if you're scripting rapid logins against a local stack (you'll see `429 ThrottlerException`; just wait a minute).
-- **Manager-only actions poll rather than push.** Query results are cached for ~15s (TanStack Query `staleTime`); two managers acting on the same request at the same time will each see the truth on their next fetch/navigation, not instantly via a live socket. The backend's locking is what actually prevents double-approval (verified live — see the concurrency test in the E2E smoke test) — this is purely a "how fast does the screen refresh" note, not a correctness gap.
+```bash
+cd durby-warehouse && git pull
+sudo docker compose up -d --build
+sudo docker compose exec backend npx prisma migrate deploy
+```
 
-Verified against the real Dockerized stack (local Docker Desktop, `docker compose up -d --build`, migrated + seeded Postgres, real Redis): the full branch → manager → driver → delivery → confirm-receipt workflow, partial approval, partial picking with a discrepancy, and the two-manager concurrent-approval race (exactly one wins, one gets `409`) all pass both via `scripts/e2e-smoke-test.mjs` and by hand in the browser.
+## Known limitations
+
+- **No user-management, location, category or password-change screens.** These are done through the API (§5, step 4). There is no
+  password reset: keep a second `SUPER_ADMIN` as the recovery path.
+- **Manager screens poll rather than push** (~15 s cache). The backend's locking, not the UI, prevents
+  double-approval, so this is only a refresh-speed note.
+- **OCR inference is unverified on real hardware** (see §7).
+- **Product images:** Open Food Facts coverage of generic grocery items is limited, and many products will
+  stay on the placeholder or in "pending review" until a manager approves or uploads an image.
+- **The demo seed is for local development only** and fails closed in production (§5).
+
+Verified against the real Dockerized stack locally (`docker compose up -d --build`, migrated + seeded Postgres,
+real Redis): the full branch → manager → driver → delivery → confirm-receipt workflow, partial approval, partial
+picking with a discrepancy, and the two-manager concurrent-approval race (exactly one wins, one gets `409`).
