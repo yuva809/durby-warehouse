@@ -27,8 +27,11 @@ if [ "$CONFIRM" != "$POSTGRES_DB" ]; then
 fi
 
 echo "Restoring $FILE into $POSTGRES_DB ..."
+# All-or-nothing: --single-transaction plus ON_ERROR_STOP means any SQL error
+# aborts and rolls back the whole restore, instead of leaving a half-restored
+# database that the app would then run against.
 gunzip -c "$FILE" | docker compose -f "$ROOT_DIR/docker-compose.yml" exec -T postgres \
-  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q -v ON_ERROR_STOP=1 --single-transaction
 
 echo "Restore complete. Restart the app services so they pick up any schema changes:"
 echo "  docker compose -f \"$ROOT_DIR/docker-compose.yml\" restart backend worker"

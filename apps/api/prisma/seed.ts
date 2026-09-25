@@ -1,10 +1,20 @@
 /**
- * Seeds the real Asia Might demo dataset ported from V1 (apps/web/src/data/seed.ts):
- * 1 central warehouse + 5 real Berlin branches, 47 real products, and the
- * same starting inventory numbers. IDs are kept identical to V1's slugs so
- * this is directly recognizable as the same dataset, just in Postgres now.
- * Also creates one demo login per role. Safe to re-run — every write is an
- * upsert.
+ * LOCAL DEVELOPMENT / DEMO seed — never for a real deployment.
+ *
+ * Seeds the Asia Might demo dataset ported from V1 (apps/web/src/data/seed.ts):
+ * 1 central warehouse + 5 Berlin branches, 47 products, the same starting
+ * inventory, and one demo login per role (9 users, all sharing one password).
+ * IDs match V1's slugs so it's recognizable as the same dataset. Safe to
+ * re-run locally — every write is an upsert — but note a re-run RESETS
+ * on-hand stock for the demo products.
+ *
+ * Production fails closed: with NODE_ENV=production (the backend container's
+ * setting) this refuses to run at all unless ALLOW_DEMO_SEED=true is set AND
+ * SEED_DEMO_PASSWORD is a strong value you supplied (the public default is
+ * never accepted), AND the database holds nothing but demo rows. A real
+ * deployment does not seed: `prisma migrate deploy` already creates the
+ * required reference data (the REQ/TR/OC/DC/INV number sequences), and the
+ * first administrator comes from `npm run bootstrap:admin` (see DEPLOY.md).
  */
 import { PrismaClient, LocationType, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -148,7 +158,10 @@ const INVENTORY: Record<string, Record<string, number>> = {
   },
 };
 
-const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'ChangeMe123!';
+// Publicly known — fine for a local demo, never accepted in production.
+const DEFAULT_DEMO_PASSWORD = 'ChangeMe123!';
+const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? DEFAULT_DEMO_PASSWORD;
+const MIN_PRODUCTION_SEED_PASSWORD_LENGTH = 12;
 
 const USERS: { email: string; name: string; role: Role; locationId?: string }[] = [
   { email: 'admin@durby.tech', name: 'Super Admin', role: Role.SUPER_ADMIN },
@@ -162,7 +175,44 @@ const USERS: { email: string; name: string; role: Role; locationId?: string }[] 
   { email: 'john@durby.tech', name: 'John', role: Role.DRIVER },
 ];
 
+/**
+ * Throws (so the process exits non-zero before a single write) unless it is
+ * safe to seed this database. Outside production nothing changes.
+ */
+async function assertSeedAllowed() {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  if (process.env.ALLOW_DEMO_SEED !== 'true') {
+    throw new Error(
+      'Refusing to seed: NODE_ENV=production. This script creates demo users, branches and products and is for local development only. ' +
+        'To create the first real administrator use `npm run bootstrap:admin` (see DEPLOY.md). ' +
+        'A staging environment that genuinely wants demo data must set ALLOW_DEMO_SEED=true and a strong SEED_DEMO_PASSWORD.',
+    );
+  }
+
+  const password = process.env.SEED_DEMO_PASSWORD;
+  if (!password || password === DEFAULT_DEMO_PASSWORD || password.length < MIN_PRODUCTION_SEED_PASSWORD_LENGTH) {
+    throw new Error(
+      `Refusing to seed in production: SEED_DEMO_PASSWORD must be set explicitly to a strong value (at least ${MIN_PRODUCTION_SEED_PASSWORD_LENGTH} characters, not the public default).`,
+    );
+  }
+
+  // The seed upserts demo rows by fixed id and resets their stock — never let it near a database holding real data.
+  const [foreignUsers, foreignLocations, foreignProducts] = await Promise.all([
+    prisma.user.count({ where: { email: { notIn: USERS.map((u) => u.email) } } }),
+    prisma.location.count({ where: { id: { notIn: LOCATIONS.map((l) => l.id) } } }),
+    prisma.product.count({ where: { id: { notIn: PRODUCTS.map((p) => p.id) } } }),
+  ]);
+  if (foreignUsers + foreignLocations + foreignProducts > 0) {
+    throw new Error(
+      `Refusing to seed in production: the database already contains non-demo data (${foreignUsers} user(s), ${foreignLocations} location(s), ${foreignProducts} product(s)).`,
+    );
+  }
+}
+
 async function main() {
+  await assertSeedAllowed();
+
   for (const loc of LOCATIONS) {
     await prisma.location.upsert({ where: { id: loc.id }, update: loc, create: loc });
   }
@@ -201,7 +251,9 @@ async function main() {
       create: { email: u.email, name: u.name, role: u.role, locationId: u.locationId, passwordHash },
     });
   }
-  console.log(`Seeded ${USERS.length} demo users (password: "${DEMO_PASSWORD}" unless SEED_DEMO_PASSWORD is set)`);
+  console.log(
+    `Seeded ${USERS.length} demo users (${DEMO_PASSWORD === DEFAULT_DEMO_PASSWORD ? 'public default demo password' : 'password from SEED_DEMO_PASSWORD'}; local/demo use only)`,
+  );
 }
 
 main()

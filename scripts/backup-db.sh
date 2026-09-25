@@ -6,6 +6,11 @@
 # Usage: ./scripts/backup-db.sh [output-dir]   (default: ./backups)
 set -euo pipefail
 
+# A backup holds real business data and every user's password hash (it does
+# NOT hold any .env secret): keep it private to the owner. New files are 600
+# and a newly created backup directory is 700.
+umask 077
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="${1:-$ROOT_DIR/backups}"
