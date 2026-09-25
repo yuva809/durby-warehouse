@@ -5,8 +5,8 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { passwordPolicyProblems } from '../common/password-policy';
+import { BCRYPT_COST, hashPassword } from '../common/password-hash';
 
-const BCRYPT_COST = 10;
 // Compared against when the email is unknown, so a failed login costs the same bcrypt work
 // whether or not the account exists (no timing signal for enumerating valid emails).
 const DUMMY_HASH = bcrypt.hashSync('timing-equalisation-only', BCRYPT_COST);
@@ -67,7 +67,7 @@ export class AuthService {
     return this.issueSession(updated);
   }
 
-  static async hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, BCRYPT_COST);
+  static hashPassword(password: string): Promise<string> {
+    return hashPassword(password);
   }
 }

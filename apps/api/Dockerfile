@@ -31,6 +31,9 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 COPY prisma ./prisma
+# prisma/reset-admin-password.ts (break-glass CLI) reuses the API's password policy and
+# hashing so there is one definition of each; nothing else from src/ is shipped.
+COPY src/common/password-policy.ts src/common/password-hash.ts ./src/common/
 
 USER app
 EXPOSE 3000

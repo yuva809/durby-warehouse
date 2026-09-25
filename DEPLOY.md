@@ -264,6 +264,35 @@ It is your recovery path: a `SUPER_ADMIN` can reset another `SUPER_ADMIN` (see b
   without an administrator, and an admin cannot set a user's password directly. Resetting takes over the *login* of a lower-role account, which is
   why managers are limited to branch and driver accounts and every reset is audited.
 
+### Break-glass: the only SUPER_ADMIN is locked out
+
+Use this **only** when no administrator can sign in and reset the password from the app (the sole SUPER_ADMIN forgot it and there is no
+second one). It is a command on the server's shell, with **no API endpoint and nothing reachable over the network**: whoever runs it
+needs SSH access and Docker rights on the server, so guard those accordingly.
+
+```bash
+cd ~/durby-warehouse
+sudo docker compose exec -e TARGET_EMAIL=admin@yourcompany.com backend npm run reset:admin-password   # no -T: it needs a terminal
+```
+
+What it does, and refuses to do:
+- **Refuses** any command-line argument, a missing/non-lowercase `TARGET_EMAIL`, and any run without an interactive terminal. The new
+  password is never taken from arguments or the environment, only typed at a hidden prompt (twice).
+- **Refuses** (exit 3, nothing changed) unless `TARGET_EMAIL` is an **existing, active SUPER_ADMIN**. It never creates a user, changes a role,
+  or reactivates an account.
+- Shows `NODE_ENV`, the database name and host, and the account, then requires you to **type the database name and then the account's email**.
+- The password must meet the normal policy (12+ characters, not a known default, not containing the email name, at most 72 bytes); three
+  invalid attempts abort. It is hashed with the same bcrypt code as the app and never printed.
+- In **one transaction** (row-locked, account re-checked at write time) it replaces the hash, **ends every existing session for that account**
+  (`tokenVersion` + 1), discards its unused reset codes, and writes a `security` entry to **Activity** naming the account and the
+  operating-system user and host that ran it (never a password or hash). If any step fails, none of it happens.
+- Other administrators' sessions and every other account are untouched. The account is not forced to change the password again (the
+  operator chose it); hand it over privately, and have its owner change it from the top bar.
+
+Exit codes: `0` done; `1` aborted or failed, nothing changed; `2` bad usage/environment; `3` target refused; `130` cancelled.
+Afterwards, check **Activity** for the "Break-glass password reset" entry, and consider whether the incident needs a wider review
+(this command exists for lockouts, and equally shows who used shell access to take over an administrator account).
+
 **5. Verify and back up (§6, §8).** Take and test-restore a backup *before* real data goes in.
 
 ### What NOT to do
@@ -411,7 +440,7 @@ sudo docker compose up -d
 ## Known limitations
 
 - **No location or category screens, and no screen to create users.** These are done through the API (§5, step 4). The **Users** screen lists
-  accounts and issues password-reset codes only. Keep a second `SUPER_ADMIN` as the recovery path.
+  accounts and issues password-reset codes only. Keep a second `SUPER_ADMIN` as the recovery path (the server-shell break-glass command in §5 is the last resort).
 - **Password reset needs an administrator** and a private handover of the one-time code (no email/SMS). Reset codes last 60 minutes.
 - **Manager screens poll rather than push** (~15 s cache). The backend's locking, not the UI, prevents
   double-approval, so this is only a refresh-speed note.
