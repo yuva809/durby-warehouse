@@ -39,6 +39,12 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
   const text = await res.text()
   const data = text ? JSON.parse(text) : undefined
 
+  // The server enforces "choose your own password first"; if we ever get here without knowing it
+  // (e.g. a stale persisted session), flip the flag so the router sends the user to the change screen.
+  if (res.status === 403 && (data as { code?: string } | undefined)?.code === 'PASSWORD_CHANGE_REQUIRED') {
+    useAuthStore.getState().setMustChangePassword(true)
+  }
+
   if (!res.ok) throw new ApiError(res.status, data)
   return data as T
 }

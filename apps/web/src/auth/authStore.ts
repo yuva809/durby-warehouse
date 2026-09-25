@@ -6,6 +6,7 @@ interface AuthState {
   token: string | null
   user: AuthUser | null
   setSession: (token: string, user: AuthUser) => void
+  setMustChangePassword: (value: boolean) => void
   logout: () => void
 }
 
@@ -22,6 +23,7 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       user: null,
       setSession: (token, user) => set({ token, user }),
+      setMustChangePassword: (value) => set((s) => (s.user ? { user: { ...s.user, mustChangePassword: value } } : s)),
       logout: () => set({ token: null, user: null }),
     }),
     { name: 'durby-warehouse-session' },

@@ -22,7 +22,8 @@
     "test:trust-proxy": "tsx scripts/trust-proxy.test.ts",
     "test:product-image-state": "tsx scripts/product-image-state.test.ts",
     "test:product-image-display": "tsx scripts/product-image-display.test.ts",
-    "test:production-init": "tsx scripts/production-init.test.ts"
+    "test:production-init": "tsx scripts/production-init.test.ts",
+    "test:password-flows": "nest build && tsx scripts/password-flows.test.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "^12.0.0",

@@ -77,6 +77,14 @@ model User {
   /// For BRANCH_USER: the single branch they belong to. Null for other roles.
   locationId   String?
   active       Boolean  @default(true)
+  /// True for accounts an admin created with an initial password: the user
+  /// must choose their own before anything else works (enforced server-side by
+  /// PasswordChangeRequiredGuard). False for existing users and the bootstrap admin.
+  passwordChangeRequired Boolean @default(false)
+  /// Session revocation. Each JWT carries the version it was issued under (claim
+  /// `tv`, absent = 0); a token whose version differs from this is rejected.
+  /// Bumped on every password change/reset, which ends all other sessions.
+  tokenVersion           Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -91,8 +99,28 @@ model User {
   supplierInvoicesUploaded  SupplierInvoice[] @relation("InvoiceUploadedBy")
   supplierInvoicesConfirmed SupplierInvoice[] @relation("InvoiceConfirmedBy")
   productImagesVerified     ProductImage[]    @relation("ImageVerifiedBy")
+  passwordResetTokens       PasswordResetToken[] @relation("ResetTokenUser")
+  passwordResetsIssued      PasswordResetToken[] @relation("ResetTokenIssuer")
 
   @@index([locationId])
+}
+
+/// One-time admin-issued password reset code. Only a SHA-256 hash of the code is
+/// stored, so a database read never reveals a usable code. The code is shown once
+/// to the admin who issues it; the user sets their own new password with it.
+model PasswordResetToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  user      User @relation("ResetTokenUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User @relation("ResetTokenIssuer", fields: [createdById], references: [id])
+
+  @@index([userId])
 }
 
 model Location {

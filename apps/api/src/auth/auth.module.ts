@@ -2,12 +2,15 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
+import { ActivityModule } from '../activity/activity.module';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { requireJwtSecret } from '../common/require-jwt-secret';
 
 @Module({
   imports: [
+    ActivityModule,
     PassportModule,
     JwtModule.registerAsync({
       useFactory: () => ({
@@ -16,8 +19,8 @@ import { requireJwtSecret } from '../common/require-jwt-secret';
       }),
     }),
   ],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, PasswordResetService, JwtStrategy],
   controllers: [AuthController],
-  exports: [AuthService],
+  exports: [AuthService, PasswordResetService],
 })
 export class AuthModule {}

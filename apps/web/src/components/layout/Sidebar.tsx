@@ -12,6 +12,7 @@ import {
   X,
   FileText,
   FileUp,
+  Users,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { LogoMark } from './LogoMark'
@@ -40,6 +41,7 @@ const NAV: { to: string; label: string; icon: typeof LayoutDashboard; end?: bool
   { to: '/deliveries', label: 'Deliveries', icon: Truck, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER', 'DRIVER'] },
   { to: '/documents', label: 'Documents', icon: FileText, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/activity', label: 'Activity', icon: Activity, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
+  { to: '/users', label: 'Users', icon: Users, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/roadmap', label: 'Roadmap', icon: Map },
 ]
 

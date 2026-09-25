@@ -1,5 +1,5 @@
 import { useLocation as useRouteLocation, useNavigate } from 'react-router-dom'
-import { LogOut, Menu } from 'lucide-react'
+import { KeyRound, LogOut, Menu } from 'lucide-react'
 import { useAuthStore } from '../../auth/authStore'
 import { isBranchUser, isDriver, isManager, ROLE_LABEL } from '../../auth/roles'
 import { useLocations } from '../../hooks/useCatalog'
@@ -14,6 +14,7 @@ const TITLES: { match: (p: string) => boolean; title: string; subtitle: string }
   { match: (p) => p.startsWith('/transfers'), title: 'Transfers', subtitle: 'Approved requests in motion' },
   { match: (p) => p.startsWith('/deliveries'), title: 'Deliveries', subtitle: 'Picking and last-mile delivery' },
   { match: (p) => p.startsWith('/activity'), title: 'Activity', subtitle: 'Full audit trail of the network' },
+  { match: (p) => p.startsWith('/users'), title: 'Users', subtitle: 'Accounts and password resets' },
   { match: (p) => p.startsWith('/roadmap'), title: 'Roadmap', subtitle: "What's next for Asia Might Super Market" },
 ]
 
@@ -68,6 +69,13 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
             <div className="text-xs text-ink-400">{ROLE_LABEL[user.role]}</div>
           </div>
         )}
+        <button
+          onClick={() => navigate('/change-password')}
+          title="Change password"
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-ink-500 ring-1 ring-inset ring-ink-200 hover:bg-ink-50 hover:text-ink-700 cursor-pointer"
+        >
+          <KeyRound size={16} />
+        </button>
         <button
           onClick={handleLogout}
           title="Log out"

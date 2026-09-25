@@ -1,13 +1,19 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
+import { AllowPasswordChangeRequired } from '../common/decorators/allow-password-change.decorator';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { AuthService } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto, CompleteResetDto } from './dto/password.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService) {}
+  constructor(
+    private auth: AuthService,
+    private reset: PasswordResetService,
+  ) {}
 
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
@@ -17,8 +23,27 @@ export class AuthController {
     return this.auth.login(dto.email, dto.password);
   }
 
+  @AllowPasswordChangeRequired()
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return user;
+  }
+
+  /** Any signed-in user, including one whose first-login change is still pending. */
+  @AllowPasswordChangeRequired()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('change-password')
+  changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
+    return this.auth.changePassword(user.userId, dto.currentPassword, dto.newPassword);
+  }
+
+  /** Public by necessity (the user is locked out): protected by the 100-bit single-use code and a strict rate limit. */
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('reset-password')
+  completeReset(@Body() dto: CompleteResetDto) {
+    return this.reset.complete(dto.code, dto.newPassword);
   }
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { LogIn, AlertTriangle } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -33,7 +33,7 @@ export default function Login() {
     try {
       const { token, user } = await authService.login(loginEmail, loginPassword)
       setSession(token, user)
-      navigate('/', { replace: true })
+      navigate(user.mustChangePassword ? '/change-password' : '/', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not reach the server')
     } finally {
@@ -95,6 +95,11 @@ export default function Login() {
             <Button type="submit" className="w-full" size="lg" disabled={loading}>
               <LogIn size={16} /> {loading ? 'Signing in…' : 'Sign in'}
             </Button>
+            <div className="text-center">
+              <Link to="/reset-password" className="text-xs font-medium text-ink-500 hover:text-ink-700">
+                Have a reset code from your administrator?
+              </Link>
+            </div>
           </form>
         </Card>
 

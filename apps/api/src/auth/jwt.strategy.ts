@@ -7,6 +7,8 @@ import { requireJwtSecret } from '../common/require-jwt-secret';
 
 interface JwtPayload {
   sub: string;
+  /** Token version at issue time; absent on tokens issued before revocation existed (treated as 0). */
+  tv?: number;
 }
 
 @Injectable()
@@ -24,6 +26,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || !user.active) {
       throw new UnauthorizedException('Account not found or deactivated');
     }
-    return { userId: user.id, email: user.email, role: user.role, locationId: user.locationId };
+    // A password change/reset bumps tokenVersion, ending every other session.
+    if ((payload.tv ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('Your session is no longer valid. Please sign in again.');
+    }
+    return { userId: user.id, email: user.email, role: user.role, locationId: user.locationId, passwordChangeRequired: user.passwordChangeRequired };
   }
 }

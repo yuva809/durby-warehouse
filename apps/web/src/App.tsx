@@ -1,8 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { useAuthStore } from './auth/authStore'
 import { CartProvider } from './cart/CartContext'
 import Login from './pages/Login'
+import ChangePassword from './pages/ChangePassword'
+import ResetPassword from './pages/ResetPassword'
+import Users from './pages/Users'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import Products from './pages/Products'
@@ -22,7 +25,11 @@ import Documents from './pages/Documents'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const token = useAuthStore((s) => s.token)
+  const mustChangePassword = useAuthStore((s) => s.user?.mustChangePassword)
+  const { pathname } = useLocation()
   if (!token) return <Navigate to="/login" replace />
+  // The server refuses every other route until the user has chosen their own password; this just routes them there.
+  if (mustChangePassword && pathname !== '/change-password') return <Navigate to="/change-password" replace />
   return children
 }
 
@@ -32,6 +39,15 @@ export default function App() {
       <CartProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route
+            path="/change-password"
+            element={
+              <RequireAuth>
+                <ChangePassword />
+              </RequireAuth>
+            }
+          />
           <Route
             element={
               <RequireAuth>
@@ -55,6 +71,7 @@ export default function App() {
             <Route path="/stock-intake" element={<StockIntake />} />
             <Route path="/stock-intake/:id" element={<StockIntakeDetail />} />
             <Route path="/documents" element={<Documents />} />
+            <Route path="/users" element={<Users />} />
           </Route>
         </Routes>
       </CartProvider>

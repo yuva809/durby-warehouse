@@ -8,6 +8,7 @@ import { RedisModule } from './redis/redis.module';
 import { CommonModule } from './common/common.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { PasswordChangeRequiredGuard } from './common/guards/password-change-required.guard';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { LocationsModule } from './locations/locations.module';
@@ -45,9 +46,10 @@ import { HealthModule } from './health/health.module';
   ],
   controllers: [AppController],
   providers: [
-    // Order matters: JwtAuthGuard populates request.user, RolesGuard reads it.
+    // Order matters: JwtAuthGuard populates request.user; RolesGuard and PasswordChangeRequiredGuard read it.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PasswordChangeRequiredGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

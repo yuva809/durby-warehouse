@@ -11,6 +11,27 @@ export interface AuthUser {
   name: string
   role: Role
   locationId: string | null
+  /** True until the user has chosen their own password; the server refuses everything else until then. */
+  mustChangePassword?: boolean
+}
+
+/** A row from GET /users (never contains password data). */
+export interface ManagedUser {
+  id: string
+  email: string
+  name: string
+  role: Role
+  locationId: string | null
+  active: boolean
+  passwordChangeRequired: boolean
+  createdAt: string
+}
+
+/** Response to POST /users/:id/reset-password. `code` is shown once and never retrievable again. */
+export interface PasswordResetIssued {
+  user: { id: string; email: string; name: string; role: Role }
+  code: string
+  expiresAt: string
 }
 
 export type LocationType = 'WAREHOUSE' | 'BRANCH'

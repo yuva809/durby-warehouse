@@ -236,8 +236,33 @@ Add products from the **Products → Add Product** screen (or `POST /products`),
 **Stock Intake**. Creating a location also creates zeroed inventory rows for the existing products. A warehouse manager can
 create branch and driver accounts, but only a `SUPER_ADMIN` can create another `SUPER_ADMIN`.
 
+**Every account created this way must choose its own password at first sign-in.** The initial password you set is only
+temporary: the server refuses everything except "change password" until the user has set their own, and the
+API cannot be used around it. (The `bootstrap:admin` administrator chose their own password already, so isn't asked again.)
+
 **Recommended:** create a second `SUPER_ADMIN` (`create_user backup-admin@yourcompany.com "Name" SUPER_ADMIN`) and store its password offline.
-There is no password-reset feature yet, so a second admin is your recovery path if the first password is lost.
+It is your recovery path: a `SUPER_ADMIN` can reset another `SUPER_ADMIN` (see below).
+
+### Password changes and resets
+
+- **Changing your own password:** the key icon in the top bar (or `POST /auth/change-password`). It needs the current password, enforces
+  the password policy (12+ characters, not a known default, not containing your email name, at most 72 bytes) and **signs out every
+  other device**. A wrong current password returns 400 (not 401), so the app doesn't sign you out.
+- **Someone forgot their password, or an account may be compromised:** an administrator opens **Users** in the sidebar and chooses
+  **Reset password**, or calls `POST /users/<id>/reset-password`. This returns a **one-time reset code** (20 characters, 100 bits, valid
+  60 minutes, single use, stored only as a SHA-256 hash). **The administrator never sees the user's new password.**
+  - Starting a reset **immediately disables the old password and signs the user out everywhere**, so it also serves as incident response.
+  - The admin gives the code (or the link, whose code sits after the `#` and is never sent to a server) to the user privately, in person or by
+    a private message. It is shown once and can't be retrieved; if lost, reset again (a new code voids the old one).
+  - The user opens **Sign in → "Have a reset code?"** (`/reset-password`), enters the code and chooses their own password.
+- **Who can reset whom** is enforced by the server, not the UI: a `SUPER_ADMIN` can reset anyone but themselves (including another
+  `SUPER_ADMIN`); a `WAREHOUSE_MANAGER` can reset only `BRANCH_USER` and `DRIVER` accounts, never a manager or an admin; branch users and
+  drivers cannot reset anyone; nobody uses the admin reset on themselves; a deactivated account must be reactivated first.
+- **Audit:** "issued a reset code for X", "completed a reset" and "changed their password" appear in **Activity** (never the code or a password).
+- **Limits:** change and reset attempts are limited to 5 per minute per client IP, and every failed reset gives the identical generic message.
+- **Not possible / by design:** there is no email or SMS delivery (the code is handed over by a person), no "forgot password" self-service
+  without an administrator, and an admin cannot set a user's password directly. Resetting takes over the *login* of a lower-role account, which is
+  why managers are limited to branch and driver accounts and every reset is audited.
 
 **5. Verify and back up (§6, §8).** Take and test-restore a backup *before* real data goes in.
 
@@ -376,14 +401,18 @@ Do this once before relying on the backups, and again occasionally.
 
 ```bash
 cd durby-warehouse && git pull
-sudo docker compose up -d --build
-sudo docker compose exec backend npx prisma migrate deploy
+sudo docker compose build
+# Apply migrations FIRST, from the new image, while the old containers keep serving. Migrations are additive, so the old code ignores new
+# columns; starting the new code before its migration would make authenticated requests fail until the migration runs.
+sudo docker compose run --rm --no-deps backend npx prisma migrate deploy
+sudo docker compose up -d
 ```
 
 ## Known limitations
 
-- **No user-management, location, category or password-change screens.** These are done through the API (§5, step 4). There is no
-  password reset: keep a second `SUPER_ADMIN` as the recovery path.
+- **No location or category screens, and no screen to create users.** These are done through the API (§5, step 4). The **Users** screen lists
+  accounts and issues password-reset codes only. Keep a second `SUPER_ADMIN` as the recovery path.
+- **Password reset needs an administrator** and a private handover of the one-time code (no email/SMS). Reset codes last 60 minutes.
 - **Manager screens poll rather than push** (~15 s cache). The backend's locking, not the UI, prevents
   double-approval, so this is only a refresh-speed note.
 - **OCR inference is unverified on real hardware** (see §7).
