@@ -152,8 +152,7 @@ model Product {
   /// Real EAN/GTIN/UPC barcode, when known — deliberately separate from
   /// `sku` (our own article number) and from SupplierInvoiceItem.rawProductCode
   /// (whatever code a specific vendor prints on their invoice, which is
-  /// never assumed to be a real barcode). Used for exact product-image
-  /// lookups; see ProductImage / ProductImageService.
+  /// never assumed to be a real barcode). Used to match supplier-invoice lines to products.
   barcode    String?   @unique
   brand      String?
   pack       String?
@@ -214,8 +213,10 @@ enum ProductImageStatus {
   MANUAL_UPLOAD
 }
 
-/// Catalog enrichment only — never touches inventory, never blocks stock
-/// intake, and is completely decoupled from SupplierInvoice confirmation.
+/// DORMANT. The product-image feature was removed for V1 and nothing reads or writes this table any more.
+/// It is deliberately left in place (empty in production) so that removing the feature needs no destructive
+/// migration; drop it in a dedicated migration later if the feature is not coming back.
+/// (Original purpose: catalog enrichment only, never touching inventory or blocking stock intake.)
 /// One row per product; "search again" overwrites this row rather than
 /// keeping a candidate history, matching the rest of this codebase's
 /// preference for the simplest thing that satisfies the actual requirement.

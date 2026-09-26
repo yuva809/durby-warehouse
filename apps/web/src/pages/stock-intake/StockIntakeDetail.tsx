@@ -5,7 +5,6 @@ import { Card, CardHeader } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { ProductThumb } from '../../components/ui/ProductThumb'
 import { useSupplierInvoice, useUpdateSupplierInvoiceItem, useConfirmSupplierInvoice, useCancelSupplierInvoice } from '../../hooks/useSupplierInvoices'
 import { useProducts } from '../../hooks/useCatalog'
 import { formatDateTime } from '../../lib/utils'
@@ -32,19 +31,6 @@ export default function StockIntakeDetail() {
   const [error, setError] = useState<string | null>(null)
 
   const editable = invoice?.status === 'DRAFT' || invoice?.status === 'UNDER_REVIEW'
-
-  // Catalog enrichment only — purely informational here, never gates confirm().
-  const imageSummary = useMemo(() => {
-    const items = invoice?.items ?? []
-    let found = 0, needsReview = 0, none = 0
-    for (const it of items) {
-      const status = it.product?.image?.status
-      if (status === 'AUTO_MATCHED' || status === 'VERIFIED' || status === 'MANUAL_UPLOAD') found++
-      else if (status === 'FOUND_NEEDS_REVIEW') needsReview++
-      else none++
-    }
-    return { total: items.length, found, needsReview, none }
-  }, [invoice])
 
   const canConfirm = useMemo(() => {
     if (!invoice?.items?.length) return false
@@ -141,23 +127,13 @@ export default function StockIntakeDetail() {
       <Card>
         <CardHeader
           title="Line Items"
-          subtitle={
-            <>
-              Received Qty is editable — only this quantity is added to stock, never the invoice quantity automatically.
-              {imageSummary.total > 0 && (
-                <span className="mt-1 block text-xs text-ink-400">
-                  {imageSummary.total} product{imageSummary.total === 1 ? '' : 's'} detected — {imageSummary.found} image{imageSummary.found === 1 ? '' : 's'} found, {imageSummary.needsReview} need{imageSummary.needsReview === 1 ? 's' : ''} review, {imageSummary.none} without an image
-                </span>
-              )}
-            </>
-          }
+          subtitle="Received Qty is editable — only this quantity is added to stock, never the invoice quantity automatically."
         />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-t border-ink-100 text-left text-xs font-semibold uppercase tracking-wide text-ink-400">
                 <th className="px-5 py-2.5">Description</th>
-                <th className="px-3 py-2.5">Image</th>
                 <th className="px-3 py-2.5">Match</th>
                 <th className="px-3 py-2.5 text-right">Invoice Qty</th>
                 <th className="px-3 py-2.5 text-right">Received Qty</th>
@@ -170,18 +146,6 @@ export default function StockIntakeDetail() {
                   <td className="px-5 py-3">
                     <div className="font-medium text-ink-800">{item.rawDescription}</div>
                     {item.rawProductCode && <div className="text-xs text-ink-400">Code: {item.rawProductCode}</div>}
-                  </td>
-                  <td className="px-3 py-3">
-                    {item.productId ? (
-                      <span className="relative inline-flex" title={item.product?.image?.status === 'FOUND_NEEDS_REVIEW' ? 'Image pending review' : undefined}>
-                        <ProductThumb src={item.product?.image?.imageUrl} size={32} iconSize={13} />
-                        {item.product?.image?.status === 'FOUND_NEEDS_REVIEW' && (
-                          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" aria-label="Image pending review" />
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-ink-300">—</span>
-                    )}
                   </td>
                   <td className="px-3 py-3">
                     {editable ? (

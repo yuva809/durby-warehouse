@@ -11,8 +11,6 @@ import { PdfInvoiceParser } from './parsers/pdf.parser';
 import type { SupplierInvoiceParser } from './parsers/types';
 import { MAX_INVOICE_QTY } from './parsers/quantity';
 import { ImportMatchingService } from './matching.service';
-import { ProductImageQueueService } from '../product-images/product-image-queue.service';
-import { displayImageUrl } from '../product-images/image-url.util';
 import type { UploadSupplierInvoiceDto } from './dto/supplier-invoice.dto';
 
 const OPEN_STATUSES: SupplierInvoiceStatus[] = [SupplierInvoiceStatus.DRAFT, SupplierInvoiceStatus.UNDER_REVIEW];
@@ -34,7 +32,6 @@ export class SupplierInvoicesService {
     private codes: CodesService,
     private activity: ActivityService,
     private matching: ImportMatchingService,
-    private productImages: ProductImageQueueService,
     csv: CsvInvoiceParser,
     excel: ExcelInvoiceParser,
     pdf: PdfInvoiceParser,
@@ -68,7 +65,6 @@ export class SupplierInvoicesService {
                 name: true,
                 sku: true,
                 unit: true,
-                image: { select: { status: true, imageUrl: true, confidence: true } },
               },
             },
           },
@@ -76,23 +72,7 @@ export class SupplierInvoicesService {
       },
     });
     if (!invoice) throw new NotFoundException('Supplier invoice not found');
-    return {
-      ...invoice,
-      items: invoice.items.map((item) => ({
-        ...item,
-        product: item.product && {
-          ...item.product,
-          // Manual uploads store bytes, not a URL, and an unreviewed
-          // FOUND_NEEDS_REVIEW candidate gets no displayable URL — see
-          // displayImageUrl. status/confidence still flow through so the
-          // review screen can flag the line as pending.
-          image: item.product.image && {
-            ...item.product.image,
-            imageUrl: displayImageUrl(item.product.id, item.product.image),
-          },
-        },
-      })),
-    };
+    return invoice;
   }
 
   /**
@@ -146,7 +126,6 @@ export class SupplierInvoicesService {
     }
 
     const code = await this.codes.next('INV');
-    const matchedProductIds = new Set<string>();
     const invoice = await this.prisma.$transaction(async (tx) => {
       const created = await tx.supplierInvoice.create({
         data: {
@@ -166,7 +145,6 @@ export class SupplierInvoicesService {
         const match = await this.matching.matchProduct(row.rawDescription, row.rawProductCode);
         const key = (row.rawProductCode || row.rawDescription).trim().toLowerCase();
         const isDuplicate = (seen.get(key) ?? 0) > 1;
-        if (match.productId) matchedProductIds.add(match.productId);
         await tx.supplierInvoiceItem.create({
           data: {
             invoiceId: created.id,
@@ -189,14 +167,6 @@ export class SupplierInvoicesService {
 
     await this.activity.log(`${dto.supplierName} invoice ${code} uploaded for review (${parsed.rows.length} line${parsed.rows.length === 1 ? '' : 's'})`, 'inventory', user.userId);
 
-    // Best-effort background catalog enrichment — see ProductImageQueueService
-    // and product-images/product-images.service.ts. Deliberately AFTER the
-    // transaction commits and completely decoupled from it: a slow/failed
-    // image lookup can never affect whether the invoice itself was created.
-    for (const productId of matchedProductIds) {
-      await this.productImages.enqueueLookup(productId);
-    }
-
     // `warnings` (lines that were skipped and why, OCR notices) are returned with the upload so the review screen can show them.
     return { ...(await this.get(invoice.id)), warnings: parsed.warnings };
   }
@@ -216,9 +186,6 @@ export class SupplierInvoicesService {
         ...(patch.receivedQty !== undefined && { receivedQty: patch.receivedQty }),
       },
     });
-    if (patch.productId) {
-      await this.productImages.enqueueLookup(patch.productId);
-    }
     return updated;
   }
 

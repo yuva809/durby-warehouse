@@ -56,33 +56,13 @@ export interface ProductCategory {
   productCount?: number
 }
 
-export type ProductImageStatus = 'NOT_FOUND' | 'FOUND_NEEDS_REVIEW' | 'AUTO_MATCHED' | 'VERIFIED' | 'MANUAL_UPLOAD'
-
-export interface ProductImage {
-  id: string
-  productId: string
-  status: ProductImageStatus
-  /** Always the URL to actually put in <img src>, regardless of whether it's an external CDN link or our own file endpoint. */
-  imageUrl: string | null
-  source?: string | null
-  confidence?: number | null
-  matchedName?: string | null
-  matchedBrand?: string | null
-  matchedBarcode?: string | null
-  attribution?: string | null
-  fetchedAt?: string | null
-  verifiedById?: string | null
-  verifiedAt?: string | null
-  verifiedBy?: { name: string } | null
-}
-
 export interface Product {
   id: string
   name: string
   sku: string
   category: string
   categoryId?: string | null
-  /** Real EAN/GTIN/UPC, when known — separate from `sku`. Used for exact product-image lookups. */
+  /** Real EAN/GTIN/UPC, when known — separate from `sku`. Used to match invoice lines to products. */
   barcode?: string | null
   unit: string
   minStock: number
@@ -98,8 +78,6 @@ export interface Product {
    */
   sourceRef?: string | null
   active: boolean
-  /** Only ever a live, catalog-appropriate image (never an unreviewed candidate) — see ProductsService.listWarehouseAvailability. */
-  image?: ProductImage | null
 }
 
 export type StockStatus = 'healthy' | 'low' | 'out'
@@ -188,8 +166,6 @@ export interface WarehouseAvailability {
   categoryId?: string | null
   unit: string
   availableQuantity: number
-  /** Only ever a live, catalog-appropriate image — never an unreviewed candidate. */
-  image?: ProductImage | null
 }
 
 export interface Driver {
@@ -237,7 +213,7 @@ export interface SupplierInvoiceItem {
   id: string
   invoiceId: string
   productId?: string | null
-  product?: { id: string; name: string; sku: string; unit: string; image?: { status: ProductImageStatus; imageUrl: string | null; confidence?: number | null } | null } | null
+  product?: { id: string; name: string; sku: string; unit: string } | null
   rawDescription: string
   rawProductCode?: string | null
   unit?: string | null

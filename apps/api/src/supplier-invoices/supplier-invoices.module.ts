@@ -8,10 +8,9 @@ import { PdfInvoiceParser } from './parsers/pdf.parser';
 import { OcrClientService } from './ocr-client.service';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ActivityModule } from '../activity/activity.module';
-import { ProductImagesModule } from '../product-images/product-images.module';
 
 @Module({
-  imports: [InventoryModule, ActivityModule, ProductImagesModule],
+  imports: [InventoryModule, ActivityModule],
   providers: [SupplierInvoicesService, ImportMatchingService, CsvInvoiceParser, ExcelInvoiceParser, PdfInvoiceParser, OcrClientService],
   controllers: [SupplierInvoicesController],
   exports: [SupplierInvoicesService],

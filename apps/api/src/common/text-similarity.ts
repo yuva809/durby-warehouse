@@ -1,7 +1,7 @@
 /**
  * Small, dependency-free, deterministic string-similarity helpers — shared
  * by every "is this the same product?" comparison in the app (supplier
- * invoice line matching, product-image candidate scoring). Explicitly not
+ * invoice line matching). Explicitly not
  * an AI/ML pipeline; every score here is explainable from the two input
  * strings alone.
  */

@@ -13,7 +13,6 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { LocationsModule } from './locations/locations.module';
 import { ProductsModule } from './products/products.module';
-import { ProductImagesModule } from './product-images/product-images.module';
 import { CategoriesModule } from './categories/categories.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { RequestsModule } from './requests/requests.module';
@@ -35,7 +34,6 @@ import { HealthModule } from './health/health.module';
     UsersModule,
     LocationsModule,
     ProductsModule,
-    ProductImagesModule,
     CategoriesModule,
     InventoryModule,
     RequestsModule,

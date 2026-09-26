@@ -6,7 +6,6 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { ProductDrawer } from '../components/inventory/ProductDrawer'
 import { ProductFormDrawer } from '../components/inventory/ProductFormDrawer'
-import { ProductThumb } from '../components/ui/ProductThumb'
 import { useProducts, useLocations } from '../hooks/useCatalog'
 import { useInventory } from '../hooks/useInventory'
 import { STATUS_STYLES, formatCurrency, stockStatus } from '../lib/utils'
@@ -64,24 +63,15 @@ export default function Products() {
             >
               <Card className="h-full p-5 transition-all group-hover:-translate-y-0.5 group-hover:shadow-md group-hover:ring-brand-200 cursor-pointer">
                 <div className="flex items-start justify-between">
-                  {p.image?.imageUrl ? (
-                    <ProductThumb src={p.image.imageUrl} size={40} className="rounded-xl" />
-                  ) : (
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-                      <Package size={18} />
-                    </span>
-                  )}
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                    <Package size={18} />
+                  </span>
                   <Badge className={STATUS_STYLES[worst].badge} dot={STATUS_STYLES[worst].dot}>
                     {STATUS_STYLES[worst].label}
                   </Badge>
                 </div>
                 <div className="mt-3.5 font-display text-[15px] font-semibold text-ink-900">{p.name}</div>
                 <div className="text-xs text-ink-400">{p.brand ? `${p.brand} · ` : ''}{p.category}</div>
-                {p.image?.status === 'FOUND_NEEDS_REVIEW' && (
-                  <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
-                    Image pending review
-                  </div>
-                )}
                 <div className="mt-4 flex items-end justify-between">
                   <div>
                     <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">Total Stock</div>

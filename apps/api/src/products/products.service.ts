@@ -1,14 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
-import { displayImageUrl } from '../product-images/image-url.util';
 import type { CreateProductDto, UpdateProductDto } from './dto/product.dto';
-
-const IMAGE_SELECT = { select: { status: true, imageUrl: true, confidence: true } } as const;
-
-function withImageUrl<T extends { id: string; image: { status: string; imageUrl: string | null } | null }>(p: T) {
-  return { ...p, image: p.image && { ...p.image, imageUrl: displayImageUrl(p.id, p.image) } };
-}
 
 @Injectable()
 export class ProductsService {
@@ -18,12 +11,10 @@ export class ProductsService {
   ) {}
 
   async list(includeInactive = false) {
-    const products = await this.prisma.product.findMany({
+    return this.prisma.product.findMany({
       where: includeInactive ? undefined : { active: true },
       orderBy: { name: 'asc' },
-      include: { image: IMAGE_SELECT },
     });
-    return products.map(withImageUrl);
   }
 
   /**
@@ -52,7 +43,7 @@ export class ProductsService {
     }
 
     const [products, inventory] = await Promise.all([
-      this.prisma.product.findMany({ where, orderBy: { name: 'asc' }, include: { image: IMAGE_SELECT } }),
+      this.prisma.product.findMany({ where, orderBy: { name: 'asc' } }),
       this.prisma.inventoryItem.findMany({ where: { locationId: warehouse.id } }),
     ]);
     const byProduct = new Map(inventory.map((i) => [i.productId, i.onHand - i.reserved]));
@@ -65,18 +56,11 @@ export class ProductsService {
       categoryId: p.categoryId,
       unit: p.unit,
       availableQuantity: Math.max(0, byProduct.get(p.id) ?? 0),
-      // Only ever a live, catalog-appropriate image — a FOUND_NEEDS_REVIEW
-      // candidate is never surfaced here, matching "do not silently assign
-      // the image" (a branch shopper sees a placeholder, not an unverified
-      // guess). ProductsController's product-detail route is open to every
-      // role including branches, same trust boundary as the rest of this
-      // response — an image is never a stock number.
-      image: p.image && (p.image.status === 'FOUND_NEEDS_REVIEW' || p.image.status === 'NOT_FOUND') ? null : withImageUrl(p).image,
     }));
   }
 
   get(id: string) {
-    return this.prisma.product.findUniqueOrThrow({ where: { id }, include: { image: IMAGE_SELECT } }).then(withImageUrl);
+    return this.prisma.product.findUniqueOrThrow({ where: { id } });
   }
 
   async create(dto: CreateProductDto) {
@@ -91,7 +75,7 @@ export class ProductsService {
   }
 
   update(id: string, dto: UpdateProductDto) {
-    return this.prisma.product.update({ where: { id }, data: dto, include: { image: IMAGE_SELECT } }).then(withImageUrl);
+    return this.prisma.product.update({ where: { id }, data: dto });
   }
 
   deactivate(id: string) {

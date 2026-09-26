@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Search, ChevronRight, Boxes } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { ProductThumb } from '../../components/ui/ProductThumb'
 import { useCategories, useWarehouseAvailability } from '../../hooks/useCatalog'
 import { useCart } from '../../cart/CartContext'
 import { cn } from '../../lib/utils'
@@ -47,7 +46,6 @@ export default function ShopCategories() {
               onClick={() => navigate(`/shop/${p.categoryId ?? 'uncategorized'}?highlight=${p.productId}`)}
             >
               <div className="flex min-w-0 items-center gap-3">
-                <ProductThumb src={p.image?.imageUrl} size={40} />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-ink-800">{p.productName}</div>
                   <div className="text-xs text-ink-400">

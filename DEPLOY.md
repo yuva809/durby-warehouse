@@ -49,7 +49,7 @@ node scripts/e2e-smoke-test.mjs                # request → transfer → delive
 ./scripts/rate-limit-proxy-test.sh             # per-client rate limiting through Caddy (local stack only)
 cd apps/api && npm run test:trust-proxy        # no DB/Docker needed
 # these need DATABASE_URL pointing at the stack's Postgres (e.g. postgresql://…@localhost:5433/…):
-npm run test:product-image-state && npm run test:product-image-display && npm run test:backfill-product-images
+npm run test:password-flows && npm run test:user-access && npm run test:reset-admin-password && npm run test:supplier-invoice-upload && npm run test:production-init
 ```
 
 Standalone frontend with hot reload:
@@ -305,25 +305,12 @@ Afterwards, check **Activity** for the "Break-glass password reset" entry, and c
 - Do not run `bootstrap:admin` to "reset" anything. It only ever creates the first administrator.
 - If a database was ever demo-seeded by mistake, don't try to clean it in place: drop it and start from step 2 (or restore a good backup).
 
-### Product image backfill: not needed for launch
+### Product images are not part of V1
 
-Product images are cosmetic catalog enrichment that never gates ordering, stock or invoices. Manual **Find Image** per
-product in the product drawer is sufficient at launch, and the `backfill-product-images` script is **not required**.
-
-- On a fresh database there is nothing to backfill until products exist, and products added through **Add Product** are
-  not looked up automatically. A lookup is only triggered by a manager's **Find Image** click or by a product being matched on a
-  supplier invoice, so the catalog fills in as invoices are processed.
-- Open Food Facts has limited coverage of generic grocery items. When the 47-product demo catalog was backfilled
-  locally, only 2 of 47 matched confidently, 9 more landed in "pending review" and 36 were "not found". A bulk backfill would mostly produce rows a manager must handle by hand anyway.
-- The script (`apps/api/scripts/backfill-product-images.ts`) isn't in the production image (only compiled
-  `dist/` and `prisma/` ship). If you later load a large catalog and want it, run it from a checkout with Node 22
-  (`cd apps/api && npm ci`) through the loopback-published ports; this hasn't been exercised on the server:
-
-```bash
-cd apps/api && set -a && . ../../.env && set +a
-DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:5433/$POSTGRES_DB" \
-REDIS_HOST=127.0.0.1 REDIS_PORT=6379 npm run backfill:product-images
-```
+The product-image feature (Open Food Facts lookup, image upload/approval, thumbnails) was removed: products are shown without images.
+Nothing here needs setup or backfilling. The database keeps an **empty, unused `ProductImage` table** (and its enum): dropping it
+would be a destructive migration with no benefit at launch, so it was deliberately left in place. It can be removed later in a
+dedicated migration if the feature is never coming back. `Product.barcode` is kept: invoice lines are matched to products by SKU or barcode.
 
 ## 6. Verify
 
@@ -382,8 +369,7 @@ Two properties to know: while an OCR request runs, the OCR container's `/health`
 
 **What a backup contains, and what it doesn't**
 
-- It is a `pg_dump` of the application database only: all business data, every user's **bcrypt password hash**, and
-  uploaded product image bytes. It contains **none of the `.env` secrets** (no `POSTGRES_PASSWORD`, `JWT_SECRET` or
+- It is a `pg_dump` of the application database only: all business data, and every user's **bcrypt password hash**. It contains **none of the `.env` secrets** (no `POSTGRES_PASSWORD`, `JWT_SECRET` or
   `REDIS_PASSWORD`; checked). Redis isn't backed up; it only holds job queues and rate-limit counters.
 - Because it holds real data and password hashes, backups are created private (files `600`, a new `backups/` directory `700`) and
   `backups/` is git-ignored. Treat every copy as sensitive, and encrypt it if it leaves the server.
@@ -445,8 +431,6 @@ sudo docker compose up -d
 - **Manager screens poll rather than push** (~15 s cache). The backend's locking, not the UI, prevents
   double-approval, so this is only a refresh-speed note.
 - **OCR inference is unverified on real hardware** (see §7).
-- **Product images:** Open Food Facts coverage of generic grocery items is limited, and many products will
-  stay on the placeholder or in "pending review" until a manager approves or uploads an image.
 - **The demo seed is for local development only** and fails closed in production (§5).
 
 Verified against the real Dockerized stack locally (`docker compose up -d --build`, migrated + seeded Postgres,

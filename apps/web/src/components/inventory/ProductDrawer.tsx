@@ -3,7 +3,6 @@ import { Drawer } from '../ui/Drawer'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { ProductFormDrawer } from './ProductFormDrawer'
-import { ProductImagePanel } from './ProductImagePanel'
 import { useProduct, useLocations } from '../../hooks/useCatalog'
 import { useInventory } from '../../hooks/useInventory'
 import { useActivity } from '../../hooks/useActivity'
@@ -53,10 +52,6 @@ export function ProductDrawer({ productId, onClose }: { productId: string | null
         ) : undefined
       }
     >
-      <div className="mb-4">
-        <ProductImagePanel productId={product.id} />
-      </div>
-
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
           { label: 'Article No.', value: product.sku },

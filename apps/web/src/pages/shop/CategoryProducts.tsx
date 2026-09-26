@@ -3,7 +3,6 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Minus, Plus, Search } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { ProductThumb } from '../../components/ui/ProductThumb'
 import { useCategories, useWarehouseAvailability } from '../../hooks/useCatalog'
 import { useCart } from '../../cart/CartContext'
 import { cn } from '../../lib/utils'
@@ -69,7 +68,6 @@ export default function ShopCategoryProducts() {
             <Card
               className={cn('flex items-center justify-between gap-3 p-4', isHighlighted && 'ring-2 ring-brand-400')}
             >
-              <ProductThumb src={p.image?.imageUrl} size={44} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-ink-800">{p.productName}</div>
                 <div className="text-xs text-ink-400">
