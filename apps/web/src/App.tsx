@@ -5,6 +5,7 @@ import { CartProvider } from './cart/CartContext'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
 import ResetPassword from './pages/ResetPassword'
+import AcceptInvitation from './pages/AcceptInvitation'
 import Users from './pages/Users'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
@@ -39,6 +40,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/accept-invitation" element={<AcceptInvitation />} />
           <Route
             path="/change-password"
             element={

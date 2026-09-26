@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { passwordPolicyProblems } from '../common/password-policy';
 import { BCRYPT_COST, hashPassword } from '../common/password-hash';
+import { normalizeEmail } from '../common/email';
 
 // Compared against when the email is unknown, so a failed login costs the same bcrypt work
 // whether or not the account exists (no timing signal for enumerating valid emails).
@@ -20,7 +21,7 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(email) } });
     const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !user.active || !valid) {
       throw new UnauthorizedException('Invalid email or password');

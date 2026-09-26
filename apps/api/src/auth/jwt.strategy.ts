@@ -30,6 +30,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if ((payload.tv ?? 0) !== user.tokenVersion) {
       throw new UnauthorizedException('Your session is no longer valid. Please sign in again.');
     }
-    return { userId: user.id, email: user.email, role: user.role, locationId: user.locationId, passwordChangeRequired: user.passwordChangeRequired };
+    return { userId: user.id, email: user.email, name: user.name, role: user.role, locationId: user.locationId, passwordChangeRequired: user.passwordChangeRequired };
   }
 }

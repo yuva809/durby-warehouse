@@ -25,6 +25,25 @@ export interface ManagedUser {
   active: boolean
   passwordChangeRequired: boolean
   createdAt: string
+  /** Derived server-side from `active` and the person's latest invitation. */
+  status: UserStatus
+  invitation: UserInvitationInfo | null
+}
+
+export type UserStatus = 'ACTIVE' | 'DEACTIVATED' | 'INVITED' | 'INVITE_EXPIRED' | 'INVITE_REVOKED'
+
+export interface UserInvitationInfo {
+  state: 'PENDING' | 'EXPIRED' | 'REVOKED' | 'ACCEPTED'
+  sentAt: string
+  expiresAt: string
+  acceptedAt: string | null
+  invitedBy: string | null
+}
+
+/** Response to POST /users/invitations and .../invitation/resend. `code` is shown once and never retrievable again. */
+export interface InvitationIssued {
+  user: ManagedUser
+  invitation: { code: string; expiresAt: string }
 }
 
 /** Response to POST /users/:id/reset-password. `code` is shown once and never retrievable again. */

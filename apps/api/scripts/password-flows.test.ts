@@ -211,7 +211,7 @@ async function main() {
     ok((await call('POST', '/auth/reset-password', { body: { code: code3, newPassword: 'Superseded-Password-Attempt-1!' } })).status === 400, 'issuing a new code voids the previous one');
     const races = await Promise.all([1, 2, 3, 4, 5].map((n) => call('POST', '/auth/reset-password', { body: { code: code4, newPassword: secret(`Race-Winner-Password-${n}x!`) } })));
     ok(races.filter((r) => r.status === 200).length === 1 && races.filter((r) => r.status === 400).length === 4, 'five simultaneous uses of one code: exactly ONE wins');
-    await call('PATCH', `/users/${id('drv')}`, { token: adminTok, body: { active: false } });
+    await call('POST', `/users/${id('drv')}/deactivate`, { token: adminTok });
     const rd = await call('POST', `/users/${id('drv')}/reset-password`, { token: adminTok });
     ok(rd.status === 409, 'a deactivated account cannot be reset (409) until reactivated');
     await call('PATCH', `/users/${id('drv')}`, { token: adminTok, body: { active: true } });
@@ -281,11 +281,13 @@ async function main() {
     const pgUser = decodeURIComponent(new URL(BASE_URL!).username);
     const psqlFile = (db: string, sql: string) => spawnSync('docker', ['exec', '-i', PG_CONTAINER, 'psql', '-U', pgUser, '-d', db, '-v', 'ON_ERROR_STOP=1', '-q'], { input: sql, encoding: 'utf8' });
     const migDirs = readdirSync('prisma/migrations', { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
-    const newest = migDirs[migDirs.length - 1];
-    ok(newest.includes('password_reset'), `the newest migration is the password one (${newest})`);
+    // The password migration is not the last one any more: later feature migrations are applied afterwards, for the drift check.
+    const newest = migDirs.find((d) => d.includes('password_reset'))!;
+    const laterMigs = migDirs.filter((d) => d > newest);
+    ok(!!newest, `the password migration is present (${newest})`);
     await admin.$executeRawUnsafe(`CREATE DATABASE "${upgradeDb}"`);
     let old = true;
-    for (const d of migDirs.slice(0, -1)) old = old && psqlFile(upgradeDb, readFileSync(`prisma/migrations/${d}/migration.sql`, 'utf8')).status === 0;
+    for (const d of migDirs.filter((m) => m < newest)) old = old && psqlFile(upgradeDb, readFileSync(`prisma/migrations/${d}/migration.sql`, 'utf8')).status === 0;
     ok(old, 'all earlier migrations applied to a fresh database (the state production is in today)');
     const legacyHash = bcrypt.hashSync('Legacy-User-Password-1!', 10);
     const ins = psqlFile(upgradeDb, `INSERT INTO "User" (id, email, "passwordHash", name, role, "updatedAt") VALUES ('legacy1', 'legacy@pwtest-company.io', '${legacyHash}', 'Legacy User', 'WAREHOUSE_MANAGER', now());`);
@@ -298,6 +300,7 @@ async function main() {
     ok(legacyRow?.passwordHash === legacyHash && bcrypt.compareSync('Legacy-User-Password-1!', legacyRow!.passwordHash), '...and their password hash is untouched, so their current password still works');
     ok((await upg.passwordResetToken.count()) === 0, 'the new reset-token table exists and is empty');
     await upg.$disconnect();
+    for (const d of laterMigs) ok(psqlFile(upgradeDb, readFileSync(`prisma/migrations/${d}/migration.sql`, 'utf8')).status === 0, `later migration ${d} applies cleanly on top`);
     const drift = sh('npx', ['prisma', 'migrate', 'diff', '--from-url', urlFor(upgradeDb), '--to-schema-datamodel', 'prisma/schema.prisma', '--exit-code'], { DATABASE_URL: urlFor(upgradeDb) });
     ok(drift.status === 0, 'the migrated database matches schema.prisma exactly (no drift)');
   } finally {

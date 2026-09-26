@@ -22,6 +22,7 @@
     "test:production-init": "tsx scripts/production-init.test.ts",
     "test:password-flows": "nest build && tsx scripts/password-flows.test.ts",
     "test:supplier-invoice-upload": "nest build && tsx scripts/supplier-invoice-upload.test.ts",
+    "test:user-access": "nest build && tsx scripts/user-access.test.ts",
     "test:reset-admin-password": "nest build && tsx scripts/reset-admin-password.test.ts"
   },
   "dependencies": {

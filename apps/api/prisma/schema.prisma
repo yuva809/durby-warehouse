@@ -101,6 +101,8 @@ model User {
   productImagesVerified     ProductImage[]    @relation("ImageVerifiedBy")
   passwordResetTokens       PasswordResetToken[] @relation("ResetTokenUser")
   passwordResetsIssued      PasswordResetToken[] @relation("ResetTokenIssuer")
+  invitations               UserInvitation[]     @relation("InvitationUser")
+  invitationsIssued         UserInvitation[]     @relation("InvitationIssuer")
 
   @@index([locationId])
 }
@@ -119,6 +121,28 @@ model PasswordResetToken {
 
   user      User @relation("ResetTokenUser", fields: [userId], references: [id], onDelete: Cascade)
   createdBy User @relation("ResetTokenIssuer", fields: [createdById], references: [id])
+
+  @@index([userId])
+}
+
+/// A pending / historical invitation for an account that an admin created without
+/// choosing its password. The invited User row exists with an unusable random
+/// password until the invitee accepts with this one-time code and sets their own.
+/// Only a SHA-256 hash of the code is stored (a database read never reveals a usable
+/// link). Status is derived, never stored: accepted (acceptedAt), revoked (revokedAt),
+/// expired (expiresAt passed while neither), otherwise pending.
+model UserInvitation {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  user      User @relation("InvitationUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User @relation("InvitationIssuer", fields: [createdById], references: [id])
 
   @@index([userId])
 }

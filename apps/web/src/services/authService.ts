@@ -29,6 +29,11 @@ export const authService = {
     return toSession(await api.post<SessionResponse>('/auth/change-password', { currentPassword, newPassword }))
   },
 
+  /** Public: the invitee follows a one-time link and chooses their own password. */
+  acceptInvitation(code: string, newPassword: string) {
+    return api.post<{ ok: true }>('/auth/accept-invitation', { code, newPassword })
+  },
+
   /** Public: the user is locked out. The code came from an administrator. */
   resetPassword(code: string, newPassword: string) {
     return api.post<{ ok: true }>('/auth/reset-password', { code, newPassword })

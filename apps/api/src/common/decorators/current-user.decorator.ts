@@ -4,6 +4,8 @@ import type { Role } from '@prisma/client';
 export interface AuthUser {
   userId: string;
   email: string;
+  /** Display name, used in audit-log messages. */
+  name: string;
   role: Role;
   locationId: string | null;
   /** Set by JwtStrategy; true until the user has chosen their own password (see PasswordChangeRequiredGuard). */

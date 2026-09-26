@@ -243,6 +243,38 @@ API cannot be used around it. (The `bootstrap:admin` administrator chose their o
 **Recommended:** create a second `SUPER_ADMIN` (`create_user backup-admin@yourcompany.com "Name" SUPER_ADMIN`) and store its password offline.
 It is your recovery path: a `SUPER_ADMIN` can reset another `SUPER_ADMIN` (see below).
 
+### User & Access Management (inviting people)
+
+Use **Users** in the sidebar (heading "User & Access Management"). Nobody ever chooses, sees or is emailed anyone else's password:
+you invite a person, the app gives you a **one-time link**, and they open it and set their own password.
+
+**Setup order** (the invite form tells you when a step is missing): create the warehouse and branches first (§5 step 4), then invite people.
+A branch user can only be invited into an **existing, active branch**.
+
+1. **You (Super Admin) create the Warehouse Manager:** Users, **Invite user**, choose *Warehouse Manager*, enter their name and email, **Create invitation**.
+2. **Give them the link** shown once (copy it; it can't be shown again: only a hash is stored). Send it privately (in person or a direct message). It is valid for 72 hours
+   (`INVITATION_TTL_HOURS`, 1 hour to 14 days) and works once. **Nothing is emailed automatically: no mail service is configured.** Sending it by
+   email later needs an SMTP/API provider (host, credentials and a sender address as new `.env` values, plus a small mail sender in the API): not built yet.
+3. **The manager opens the link**, chooses a password (12+ characters, not a known default, not containing their email name) and can sign in with their email straight away.
+4. **The manager invites branch users:** Users, Invite user, *Branch*, pick the branch, name and email. Same link step. They can also invite drivers.
+5. **Lost or expired link?** Open the person's **Manage** dialog and choose *Resend (new link)* (the old link stops working) or *Revoke invitation*.
+
+| Role | Can manage users | Sees and uses |
+|---|---|---|
+| Super Admin | Everyone: invites/edits/deactivates/reactivates warehouse managers, branch users, drivers; the only one who can create another Super Admin | Everything |
+| Warehouse Manager | Branch users and drivers only (never Super Admins or other managers, not themselves); may assign branch users only to existing active branches | Inventory, products, branches, stock intake, requests, transfers, deliveries, documents, activity |
+| Branch user | Nobody | Only their assigned branch: its requests, orders and receipts |
+| Driver | Nobody | Only the delivery (transfers) functions; no stock requests, inventory or admin |
+
+Rules the server enforces (not just the screen): roles are **fixed** once created (no promotion path); a person can't deactivate themselves; the last
+usable Super Admin can never be deactivated; **deactivating someone ends all their sessions immediately** (as does *Sign out everywhere*); an invitee who
+hasn't accepted can't sign in; inviting an address that already exists returns one generic message (no account is revealed). Every invitation, resend, revoke,
+acceptance, deactivation, reactivation, branch move and sign-out is written to **Activity** (never a link or password). Emails are stored in lower case, and sign-in
+ignores capital letters.
+
+The older `POST /users` (admin-supplied initial password, forced change at first sign-in) still exists for scripts such as `scripts/setup-business-data.py`;
+the app itself uses invitations.
+
 ### Password changes and resets
 
 - **Changing your own password:** the key icon in the top bar (or `POST /auth/change-password`). It needs the current password, enforces
@@ -425,8 +457,8 @@ sudo docker compose up -d
 
 ## Known limitations
 
-- **No location or category screens, and no screen to create users.** These are done through the API (§5, step 4). The **Users** screen lists
-  accounts and issues password-reset codes only. Keep a second `SUPER_ADMIN` as the recovery path (the server-shell break-glass command in §5 is the last resort).
+- **No location or category screens.** These are done through the API (§5, step 4). People are invited and managed on the **Users** screen. Invitation links are
+  shown to the inviter to hand over; they are not emailed (no mail service is configured). Keep a second `SUPER_ADMIN` as the recovery path (the server-shell break-glass command in §5 is the last resort).
 - **Password reset needs an administrator** and a private handover of the one-time code (no email/SMS). Reset codes last 60 minutes.
 - **Manager screens poll rather than push** (~15 s cache). The backend's locking, not the UI, prevents
   double-approval, so this is only a refresh-speed note.
