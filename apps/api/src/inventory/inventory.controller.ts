@@ -52,6 +52,9 @@ export class InventoryController {
         productName: i.product.name,
         sku: i.product.sku,
         unit: i.product.unit,
+        // Stock is counted in `unit` (e.g. cartons); the individual-unit equivalent is for reference/reporting only.
+        packSize: i.product.packSize,
+        unitsOnHand: i.product.packSize ? i.onHand * i.product.packSize : null,
         onHand: i.onHand,
         reserved: i.reserved,
         available: i.onHand - i.reserved,

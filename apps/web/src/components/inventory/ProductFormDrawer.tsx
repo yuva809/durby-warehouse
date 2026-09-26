@@ -32,6 +32,7 @@ export function ProductFormDrawer({ product, open, onClose }: { product: Product
   const [brand, setBrand] = useState('')
   const [pack, setPack] = useState('')
   const [unit, setUnit] = useState('')
+  const [packSize, setPackSize] = useState('')
   const [minStock, setMinStock] = useState('0')
   const [unitPrice, setUnitPrice] = useState('')
 
@@ -44,6 +45,7 @@ export function ProductFormDrawer({ product, open, onClose }: { product: Product
     setBrand(product?.brand ?? '')
     setPack(product?.pack ?? '')
     setUnit(product?.unit ?? '')
+    setPackSize(product?.packSize ? String(product.packSize) : '')
     setMinStock(String(product?.minStock ?? 0))
     setUnitPrice(product ? String(product.unitPrice) : '')
     create.reset()
@@ -51,7 +53,8 @@ export function ProductFormDrawer({ product, open, onClose }: { product: Product
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, product?.id])
 
-  const canSubmit = sku.trim() && name.trim() && categoryId && unit.trim() && unitPrice.trim() && Number(unitPrice) >= 0
+  const packSizeOk = packSize.trim() === '' || (Number.isInteger(Number(packSize)) && Number(packSize) >= 1)
+  const canSubmit = sku.trim() && name.trim() && categoryId && unit.trim() && unitPrice.trim() && Number(unitPrice) >= 0 && packSizeOk
 
   async function handleSubmit() {
     const category = categories.find((c) => c.id === categoryId)
@@ -64,6 +67,7 @@ export function ProductFormDrawer({ product, open, onClose }: { product: Product
       brand: brand.trim() || undefined,
       pack: pack.trim() || undefined,
       unit: unit.trim(),
+      ...(packSize.trim() !== '' && { packSize: Number(packSize) }),
       minStock: Number(minStock) || 0,
       unitPrice: Number(unitPrice),
     }
@@ -143,17 +147,22 @@ export function ProductFormDrawer({ product, open, onClose }: { product: Product
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className={labelClass}>Unit</label>
-            <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. kg" className={inputClass} />
+            <label className={labelClass}>Stock Unit</label>
+            <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. carton" className={inputClass} />
           </div>
           <div>
             <label className={labelClass}>Min Stock</label>
             <input type="number" min={0} value={minStock} onChange={(e) => setMinStock(e.target.value)} className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>Unit Price (€)</label>
+            <label className={labelClass}>Price per {unit.trim() || 'unit'} (€)</label>
             <input type="number" min={0} step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} className={inputClass} />
           </div>
+        </div>
+        <div>
+          <label className={labelClass}>Units per {unit.trim() || 'stock unit'} (optional)</label>
+          <input type="number" min={1} step={1} value={packSize} onChange={(e) => setPackSize(e.target.value)} placeholder="e.g. 24" className={inputClass} />
+          <p className="mt-1 text-xs text-ink-400">Stock is always counted in the stock unit above. This only shows the individual-unit equivalent for reference.</p>
         </div>
       </div>
     </Drawer>

@@ -1,4 +1,5 @@
-import { IsDateString, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import { MAX_INVOICE_QTY } from '../parsers/quantity';
 
 export class UploadSupplierInvoiceDto {
@@ -13,6 +14,14 @@ export class UploadSupplierInvoiceDto {
   @IsOptional()
   @IsDateString()
   invoiceDate?: string;
+
+  /** The total the uploader expects the invoice to add up to (multipart fields arrive as text). Checked against the document. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100_000_000)
+  invoiceTotal?: number;
 }
 
 export class UpdateSupplierInvoiceItemDto {

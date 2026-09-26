@@ -14,12 +14,28 @@ export interface ParsedInvoiceRow {
   unit?: string;
   /** Quantity as printed on the source document — never written to inventory directly. */
   quantity: number;
+  // Optional detail, only filled by layouts that print it (see columnar-invoice.ts). `quantity` is always in STOCK units (cartons).
+  /** Individual units in one carton, and the total individual units on this line (quantity x packSize). */
+  packSize?: number;
+  totalUnits?: number;
+  /** Price as printed and whether it is per carton or per individual unit; the printed line amount; free-of-charge line (price and amount both 0). */
+  unitPrice?: number;
+  priceBasis?: 'CARTON' | 'UNIT';
+  lineAmount?: number;
+  isFree?: boolean;
+  batchNumber?: string;
+  expiryDate?: Date;
+  /** This row's own numbers did not add up (e.g. cartons x pack size != printed units), so it must be checked by hand even if everything else is trusted. */
+  suspect?: boolean;
 }
 
 export interface ParsedInvoiceHeader {
   supplierName?: string;
   invoiceNumber?: string;
   invoiceDate?: Date;
+  /** The total the document itself declares (payable amount), and its currency. */
+  invoiceTotal?: number;
+  currency?: string;
 }
 
 export interface ParsedInvoice {
@@ -36,6 +52,11 @@ export interface ParsedInvoice {
    * rows are always forced into review independent of match confidence.
    */
   forceReview?: boolean;
+  /**
+   * True only when the header (invoice number, date, total) was read from a document in a layout we recognise, so it is safe to
+   * hold the uploader's typed values to it. The generic text heuristic guesses its header, so it never sets this.
+   */
+  headerReliable?: boolean;
 }
 
 export interface SupplierInvoiceParser {

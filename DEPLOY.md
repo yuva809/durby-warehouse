@@ -49,7 +49,8 @@ node scripts/e2e-smoke-test.mjs                # request → transfer → delive
 ./scripts/rate-limit-proxy-test.sh             # per-client rate limiting through Caddy (local stack only)
 cd apps/api && npm run test:trust-proxy        # no DB/Docker needed
 # these need DATABASE_URL pointing at the stack's Postgres (e.g. postgresql://…@localhost:5433/…):
-npm run test:password-flows && npm run test:user-access && npm run test:reset-admin-password && npm run test:supplier-invoice-upload && npm run test:production-init && npm run test:audit-fixes
+npm run test:password-flows && npm run test:user-access && npm run test:reset-admin-password && npm run test:supplier-invoice-upload && npm run test:production-init && npm run test:audit-fixes && npm run test:invoice-lines
+npm run test:columnar-invoice                  # invoice layout reader (no DB); REAL_INVOICE_PDF=<file> also checks a real invoice
 cd ../web && npm run test:logic                # route access + warehouse lookup (pure logic, no browser)
 ```
 
@@ -394,6 +395,22 @@ scanned invoice PDF on the Stock Intake screen and confirm text comes back. If O
 the upload is refused with a clean message and nothing is created, and CSV/XLSX and text PDFs are unaffected.
 Two properties to know: while an OCR request runs, the OCR container's `/health` may not respond
 (the container can show "unhealthy" but is not restarted), and scans are processed one at a time.
+
+### Supplier invoices: cartons, pack sizes, prices, batches
+
+- **Stock is counted in each product's stock unit** (Products, *Stock Unit*; e.g. `carton`), which is configurable per product. A product can also record
+  *Units per carton* (`packSize`); the Inventory screen and `GET /inventory` then show the individual-unit equivalent (18 cartons = 432 units) for reference.
+  Stock itself is never multiplied by the pack size.
+- **Recognised layout.** A text-layer PDF in the Fresh Tropical layout (a product line, then a `Cod.Int.` / `L/Data` batch and best-before line) is read column by
+  column: product code, description, cartons, pack size, total units, price (and whether it is per carton or per unit), line amount, batch, expiry. The invoice
+  number, date and total are read from the document. Every line is checked (cartons x pack = units; price x quantity = amount); a line that does not add up is
+  stored as printed and flagged for review. Any other PDF uses the generic best-effort reader, and scanned PDFs go through OCR; both stay fully review-gated.
+- **Free-of-charge lines** (price and amount 0) are separate lines marked FREE. Their quantity is real stock and is received like any other line (15 paid + 3 free = 18 cartons).
+- **Totals.** The invoice total (from the document, or the one typed at upload) and the sum of the line amounts are stored and compared on the review screen.
+  If you type a total or invoice number at upload and the document says otherwise, the upload is refused; a document whose lines do not add up to its own total is
+  stored for review with a warning. The same supplier and invoice number cannot be uploaded twice (a cancelled upload does not count).
+- **Leaving a line out.** A line that is not a stock product can be left unmatched with its Received Qty set to 0; confirming then adds nothing for it.
+- Matching is by the code printed on the line: create products with the supplier's item code as the SKU (or barcode) and lines match exactly.
 
 ## 8. Back up and restore Postgres
 

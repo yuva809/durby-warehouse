@@ -32,6 +32,13 @@ export class CreateProductDto {
   @IsString()
   unit!: string;
 
+  /** Individual units in one stock unit (e.g. 24 bottles per carton). Reference/reporting only. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_QUANTITY)
+  packSize?: number;
+
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -71,6 +78,12 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   unit?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_QUANTITY)
+  packSize?: number;
 
   @IsOptional()
   @IsInt()

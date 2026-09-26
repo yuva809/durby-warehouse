@@ -108,6 +108,9 @@ export default function Inventory() {
                   <td className="px-3 py-3 text-ink-500 whitespace-nowrap">{product.pack ?? '—'}</td>
                   <td className="px-3 py-3 text-right tabular-nums text-ink-700 whitespace-nowrap">
                     {noWarehouse ? '—' : `${byLocationProduct.get(`${warehouseId}:${product.id}`) ?? 0} ${product.unit}`}
+                    {!noWarehouse && product.packSize ? (
+                      <div className="text-xs font-normal text-ink-400">= {(byLocationProduct.get(`${warehouseId}:${product.id}`) ?? 0) * product.packSize} units</div>
+                    ) : null}
                   </td>
                   {branches.map((b) => {
                     const qty = byLocationProduct.get(`${b.id}:${product.id}`) ?? 0
@@ -126,6 +129,7 @@ export default function Inventory() {
                   })}
                   <td className="px-3 py-3 text-right tabular-nums font-semibold text-ink-900 whitespace-nowrap">
                     {total} {product.unit}
+                    {product.packSize ? <div className="text-xs font-normal text-ink-400">= {total * product.packSize} units</div> : null}
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
                     {worst === 'healthy' ? (

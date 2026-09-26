@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PDFParse } from 'pdf-parse';
 import type { ParsedInvoice, SupplierInvoiceParser } from './types';
 import { parseInvoiceTextLines } from './text-row-parser';
+import { parseColumnarInvoice } from './columnar-invoice';
 import { OcrClientService } from '../ocr-client.service';
 
 // Below this many non-whitespace characters, pdf-parse's text layer is
@@ -80,12 +81,21 @@ export class PdfInvoiceParser implements SupplierInvoiceParser {
       );
     }
 
-    const { header, rows, issues } = parseInvoiceTextLines(text);
+    // A supplier layout we know (product line + batch/expiry line, with prices and pack sizes) is read exactly; anything else
+    // falls back to the generic best-effort heuristic. Either way the manager reviews before stock changes.
+    const known = parseColumnarInvoice(text);
+    const { header, rows, issues } = known ?? parseInvoiceTextLines(text);
+    if (known && isTextSufficient) {
+      // Replace the generic "best-effort heuristic" notice: this file matched a known layout.
+      warnings[0] = 'This file matched a known invoice layout and was read column by column from the PDF\'s text layer (product code, pack size, price, batch and best-before date). Check it against the original before confirming.';
+    }
     warnings.push(...issues);
     if (rows.length === 0) {
       warnings.push('No product rows could be detected automatically — this PDF may use an unsupported layout. Add items manually on the review screen.');
     }
 
-    return { header, rows, warnings, forceReview: true };
+    // A recognised layout read from a real text layer is trusted (rows whose numbers do not add up are still flagged individually);
+    // the generic heuristic and anything read through OCR are never trusted without review.
+    return { header, rows, warnings, forceReview: !known || !isTextSufficient, headerReliable: !!known && isTextSufficient };
   }
 }

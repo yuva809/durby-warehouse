@@ -13,12 +13,14 @@ export function UploadInvoiceDrawer({ open, onClose }: { open: boolean; onClose:
   const [supplierName, setSupplierName] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [invoiceDate, setInvoiceDate] = useState('')
+  const [invoiceTotal, setInvoiceTotal] = useState('')
 
   function reset() {
     setFile(null)
     setSupplierName('')
     setInvoiceNumber('')
     setInvoiceDate('')
+    setInvoiceTotal('')
     upload.reset()
   }
 
@@ -30,7 +32,7 @@ export function UploadInvoiceDrawer({ open, onClose }: { open: boolean; onClose:
   async function handleSubmit() {
     if (!file || !supplierName.trim() || !invoiceNumber.trim()) return
     try {
-      const invoice = await upload.mutateAsync({ file, supplierName: supplierName.trim(), invoiceNumber: invoiceNumber.trim(), invoiceDate: invoiceDate || undefined })
+      const invoice = await upload.mutateAsync({ file, supplierName: supplierName.trim(), invoiceNumber: invoiceNumber.trim(), invoiceDate: invoiceDate || undefined, invoiceTotal: invoiceTotal.trim() || undefined })
       reset()
       onClose()
       navigate(`/stock-intake/${invoice.id}`, { state: { warnings: invoice.warnings } })
@@ -103,6 +105,20 @@ export function UploadInvoiceDrawer({ open, onClose }: { open: boolean; onClose:
             onChange={(e) => setInvoiceDate(e.target.value)}
             className="mt-1.5 w-full rounded-lg bg-ink-50 px-3 py-2.5 text-sm text-ink-800 outline-none ring-1 ring-inset ring-ink-200 focus:ring-brand-400"
           />
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-wide text-ink-400">Invoice Total (optional)</label>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={invoiceTotal}
+            onChange={(e) => setInvoiceTotal(e.target.value)}
+            placeholder="e.g. 4300.36"
+            className="mt-1.5 w-full rounded-lg bg-ink-50 px-3 py-2.5 text-sm text-ink-800 outline-none ring-1 ring-inset ring-ink-200 placeholder:text-ink-400 focus:ring-brand-400"
+          />
+          <p className="mt-1 text-xs text-ink-400">If you enter it, the upload is refused when it does not match the total printed on the invoice.</p>
         </div>
 
         <div className="flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2.5 text-xs text-blue-700">

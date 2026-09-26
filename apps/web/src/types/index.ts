@@ -83,7 +83,10 @@ export interface Product {
   categoryId?: string | null
   /** Real EAN/GTIN/UPC, when known — separate from `sku`. Used to match invoice lines to products. */
   barcode?: string | null
+  /** The STOCK unit: what every quantity for this product is counted in (e.g. "carton"). */
   unit: string
+  /** Individual units in one stock unit (e.g. 24 bottles per carton) — reference/reporting only. */
+  packSize?: number | null
   minStock: number
   unitPrice: number
   brand?: string | null
@@ -109,6 +112,9 @@ export interface InventoryLine {
   productName: string
   sku: string
   unit: string
+  packSize?: number | null
+  /** onHand x packSize, when the pack size is known. */
+  unitsOnHand?: number | null
   onHand: number
   reserved: number
   available: number
@@ -232,11 +238,22 @@ export interface SupplierInvoiceItem {
   id: string
   invoiceId: string
   productId?: string | null
-  product?: { id: string; name: string; sku: string; unit: string } | null
+  product?: { id: string; name: string; sku: string; unit: string; packSize?: number | null } | null
   rawDescription: string
   rawProductCode?: string | null
   unit?: string | null
+  /** In STOCK units (cartons). */
   invoiceQty: number
+  packSize?: number | null
+  /** invoiceQty x packSize: individual units on this line. */
+  totalUnits?: number | null
+  /** Decimals arrive from the API as text. */
+  unitPrice?: string | null
+  priceBasis?: 'CARTON' | 'UNIT' | null
+  lineAmount?: string | null
+  isFree?: boolean
+  batchNumber?: string | null
+  expiryDate?: string | null
   receivedQty?: number | null
   matchConfidence?: string | null
   needsReview: boolean
@@ -256,6 +273,10 @@ export interface SupplierInvoice {
   confirmedById?: string | null
   confirmedBy?: { name: string } | null
   confirmedAt?: string | null
+  /** The total the invoice declares, and the sum of the parsed line amounts (text decimals; null when the format has no amounts). */
+  invoiceTotal?: string | null
+  linesTotal?: string | null
+  currency?: string | null
   createdAt: string
   items?: SupplierInvoiceItem[]
   _count?: { items: number }

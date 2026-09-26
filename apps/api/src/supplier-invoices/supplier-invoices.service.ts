@@ -66,6 +66,7 @@ export class SupplierInvoicesService {
                 name: true,
                 sku: true,
                 unit: true,
+                packSize: true,
               },
             },
           },
@@ -116,13 +117,66 @@ export class SupplierInvoicesService {
       );
     }
 
+    const warnings = [...parsed.warnings];
+    const header = parsed.header;
+
+    // The uploader's typed values are held to what the document itself says, but only when the header was read from a layout we
+    // recognise (the generic text heuristic guesses its header). A wrong invoice number cannot be edited afterwards, so refuse it now.
+    let invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : undefined;
+    let invoiceTotal = dto.invoiceTotal;
+    if (parsed.headerReliable) {
+      const norm = (v: string) => v.trim().replace(/\s+/g, '').toLowerCase();
+      if (header.invoiceNumber && norm(header.invoiceNumber) !== norm(dto.invoiceNumber)) {
+        throw new UnprocessableEntityException(
+          `The invoice number you entered (${dto.invoiceNumber}) does not match the number printed on the file (${header.invoiceNumber}). Check it and upload again.`,
+        );
+      }
+      if (header.invoiceTotal !== undefined && dto.invoiceTotal !== undefined && Math.round(header.invoiceTotal * 100) !== Math.round(dto.invoiceTotal * 100)) {
+        throw new UnprocessableEntityException(
+          `The invoice total you entered (${dto.invoiceTotal.toFixed(2)}) does not match the total printed on the file (${header.invoiceTotal.toFixed(2)}). Check it and upload again.`,
+        );
+      }
+      if (header.invoiceDate && invoiceDate && header.invoiceDate.getTime() !== Date.UTC(invoiceDate.getUTCFullYear(), invoiceDate.getUTCMonth(), invoiceDate.getUTCDate())) {
+        warnings.push(`The invoice date you entered differs from the date printed on the file (${header.invoiceDate.toISOString().slice(0, 10)}); the printed date was used.`);
+      }
+      if (header.invoiceDate) invoiceDate = header.invoiceDate;
+      if (header.invoiceTotal !== undefined) invoiceTotal = header.invoiceTotal;
+    }
+
+    // Sum of the parsed line amounts, compared with the invoice total (in cents, to avoid floating-point drift).
+    const amounts = parsed.rows.map((r) => r.lineAmount).filter((a): a is number => a !== undefined);
+    const linesTotal = amounts.length === parsed.rows.length && amounts.length > 0 ? amounts.reduce((sum, a) => sum + Math.round(a * 100), 0) / 100 : undefined;
+    if (linesTotal !== undefined && invoiceTotal !== undefined) {
+      if (Math.round(linesTotal * 100) === Math.round(invoiceTotal * 100)) {
+        warnings.push(`Total check: the ${parsed.rows.length} lines add up to ${linesTotal.toFixed(2)}, matching the invoice total.`);
+      } else {
+        warnings.push(`Total check FAILED: the ${parsed.rows.length} lines add up to ${linesTotal.toFixed(2)} but the invoice total is ${invoiceTotal.toFixed(2)}. A line may be missing or misread.`);
+      }
+    }
+
+    // Refuse to store the same supplier invoice twice. A cancelled upload does not count, so a botched one can simply be cancelled and redone.
+    const clash = await this.prisma.supplierInvoice.findFirst({
+      where: {
+        supplierName: { equals: dto.supplierName.trim(), mode: 'insensitive' },
+        invoiceNumber: { equals: dto.invoiceNumber.trim(), mode: 'insensitive' },
+        status: { not: SupplierInvoiceStatus.CANCELLED },
+      },
+      select: { code: true, status: true },
+    });
+    if (clash) {
+      throw new ConflictException(`Invoice ${dto.invoiceNumber.trim()} from ${dto.supplierName.trim()} was already uploaded as ${clash.code} (${clash.status.toLowerCase().replace('_', ' ')}). Cancel that one first if it needs to be redone.`);
+    }
+
     // Duplicate-row detection: same code (or same normalized description
     // when no code) appearing twice in one upload — flagged, not merged or
     // dropped, so the manager decides (could be two genuinely separate
-    // lines, e.g. different batches).
+    // lines, e.g. different batches). A free-of-charge line for a product that is
+    // also paid for, or a second batch, is a normal pair and is not a duplicate.
+    const rowKey = (row: { rawProductCode?: string; rawDescription: string; isFree?: boolean; batchNumber?: string }) =>
+      `${(row.rawProductCode || row.rawDescription).trim().toLowerCase()}|${row.isFree ? 'free' : 'paid'}|${row.batchNumber ?? ''}`;
     const seen = new Map<string, number>();
     for (const row of parsed.rows) {
-      const key = (row.rawProductCode || row.rawDescription).trim().toLowerCase();
+      const key = rowKey(row);
       seen.set(key, (seen.get(key) ?? 0) + 1);
     }
 
@@ -133,7 +187,10 @@ export class SupplierInvoicesService {
           code,
           supplierName: dto.supplierName,
           invoiceNumber: dto.invoiceNumber,
-          invoiceDate: dto.invoiceDate ? new Date(dto.invoiceDate) : undefined,
+          invoiceDate,
+          invoiceTotal,
+          linesTotal,
+          currency: header.currency,
           status: SupplierInvoiceStatus.UNDER_REVIEW,
           sourceFileName: file.originalname,
           sourceFileType: file.mimetype,
@@ -144,8 +201,7 @@ export class SupplierInvoicesService {
 
       for (const row of parsed.rows) {
         const match = await this.matching.matchProduct(row.rawDescription, row.rawProductCode);
-        const key = (row.rawProductCode || row.rawDescription).trim().toLowerCase();
-        const isDuplicate = (seen.get(key) ?? 0) > 1;
+        const isDuplicate = (seen.get(rowKey(row)) ?? 0) > 1;
         await tx.supplierInvoiceItem.create({
           data: {
             invoiceId: created.id,
@@ -154,11 +210,19 @@ export class SupplierInvoicesService {
             rawProductCode: row.rawProductCode,
             unit: row.unit,
             invoiceQty: row.quantity,
+            packSize: row.packSize,
+            totalUnits: row.totalUnits,
+            unitPrice: row.unitPrice,
+            priceBasis: row.priceBasis,
+            lineAmount: row.lineAmount,
+            isFree: !!row.isFree,
+            batchNumber: row.batchNumber,
+            expiryDate: row.expiryDate,
             // Pre-fill received = invoice qty as a starting point the
             // manager edits — never written to inventory until confirm().
             receivedQty: row.quantity,
             matchConfidence: match.confidence,
-            needsReview: match.confidence !== 'exact' || isDuplicate || !!parsed.forceReview,
+            needsReview: match.confidence !== 'exact' || isDuplicate || !!parsed.forceReview || !!row.suspect,
           },
         });
       }
@@ -169,7 +233,7 @@ export class SupplierInvoicesService {
     await this.activity.log(`${dto.supplierName} invoice ${code} uploaded for review (${parsed.rows.length} line${parsed.rows.length === 1 ? '' : 's'})`, 'inventory', user.userId);
 
     // `warnings` (lines that were skipped and why, OCR notices) are returned with the upload so the review screen can show them.
-    return { ...(await this.get(invoice.id)), warnings: parsed.warnings };
+    return { ...(await this.get(invoice.id)), warnings };
   }
 
   async updateItem(invoiceId: string, itemId: string, patch: { productId?: string | null; receivedQty?: number }) {
@@ -185,6 +249,8 @@ export class SupplierInvoicesService {
       data: {
         ...(patch.productId !== undefined && { productId: patch.productId, needsReview: false, matchConfidence: patch.productId ? 'exact' : 'unmatched' }),
         ...(patch.receivedQty !== undefined && { receivedQty: patch.receivedQty }),
+        // Setting the received quantity to 0 is a deliberate "nothing to add for this line" (e.g. a line that is not a stock product): it settles the review flag.
+        ...(patch.receivedQty === 0 && patch.productId === undefined && { needsReview: false }),
       },
     });
     return updated;
@@ -211,8 +277,8 @@ export class SupplierInvoicesService {
         throw new ConflictException('This invoice has no line items');
       }
       for (const item of invoice.items) {
-        if (!item.productId) {
-          throw new ConflictException(`"${item.rawDescription}" has not been matched to a product yet — resolve it before confirming.`);
+        if (!item.productId && item.receivedQty !== 0) {
+          throw new ConflictException(`"${item.rawDescription}" has not been matched to a product yet — match it, or set its received quantity to 0 to leave it out, before confirming.`);
         }
         // needsReview is a real gate, not just a UI badge: a fuzzy match, a
         // duplicate-row flag, or any PDF-sourced row (best-effort text
@@ -246,7 +312,7 @@ export class SupplierInvoicesService {
       if (!warehouse) throw new ConflictException('No central warehouse location is configured');
 
       for (const item of invoice.items) {
-        if (item.receivedQty! > 0) {
+        if (item.receivedQty! > 0 && item.productId) {
           await this.inventory.applyMovement(tx, {
             locationId: warehouse.id,
             productId: item.productId!,

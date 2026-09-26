@@ -180,7 +180,11 @@ model Product {
   barcode    String?   @unique
   brand      String?
   pack       String?
+  /// The STOCK unit: what onHand/reserved/requests are counted in (e.g. "carton", "kg"). Configurable per product.
   unit       String
+  /// How many individual units make up one stock unit (e.g. 24 bottles per carton). Null when not applicable. Only used
+  /// for reference/reporting ("18 cartons = 432 units"); stock itself is always counted in `unit`.
+  packSize   Int?
   minStock   Int       @default(0)
   unitPrice  Decimal   @db.Decimal(10, 2)
   expiryDate DateTime?
@@ -428,6 +432,11 @@ model SupplierInvoice {
   sourceFileName String?
   sourceFileType String?
   sourceFileData Bytes?
+  /// The total the invoice itself declares (or the total the uploader stated), and the sum of the parsed line amounts.
+  /// Both null for older invoices / formats without amounts; a difference between them is shown to the reviewer.
+  invoiceTotal   Decimal?              @db.Decimal(12, 2)
+  linesTotal     Decimal?              @db.Decimal(12, 2)
+  currency       String?
   uploadedById   String
   confirmedById  String?
   confirmedAt    DateTime?
@@ -453,6 +462,19 @@ model SupplierInvoiceItem {
   /// Quantity as printed on the supplier's invoice — never written to
   /// inventory directly.
   invoiceQty     Int
+  /// Individual units in one invoiced carton (pack size) and the total individual units on this line (invoiceQty x packSize).
+  /// invoiceQty stays in STOCK units (cartons); these two are kept for reference and reporting only.
+  packSize       Int?
+  totalUnits     Int?
+  /// Price as printed, whether it is per carton or per individual unit ('CARTON' | 'UNIT'; null for free lines / unknown),
+  /// the printed line amount, and whether this is a free-of-charge line (price and amount both zero; its quantity still counts).
+  unitPrice      Decimal?              @db.Decimal(12, 4)
+  priceBasis     String?
+  lineAmount     Decimal?              @db.Decimal(12, 2)
+  isFree         Boolean               @default(false)
+  /// Supplier batch/lot number and best-before date printed under the line.
+  batchNumber    String?
+  expiryDate     DateTime?
   /// Manager-confirmed quantity actually received — this, not invoiceQty, is
   /// what confirm() adds to onHand. Null until reviewed.
   receivedQty    Int?

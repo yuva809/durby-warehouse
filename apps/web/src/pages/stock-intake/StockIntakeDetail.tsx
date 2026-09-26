@@ -7,7 +7,7 @@ import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useSupplierInvoice, useUpdateSupplierInvoiceItem, useConfirmSupplierInvoice, useCancelSupplierInvoice } from '../../hooks/useSupplierInvoices'
 import { useProducts } from '../../hooks/useCatalog'
-import { formatDateTime } from '../../lib/utils'
+import { formatCurrency, formatDateTime } from '../../lib/utils'
 import { api } from '../../lib/apiClient'
 import type { SupplierInvoiceStatus } from '../../types'
 
@@ -36,8 +36,25 @@ export default function StockIntakeDetail() {
     if (!invoice?.items?.length) return false
     // needsReview is a real server-side gate (see SupplierInvoicesService.confirm) —
     // mirrored here so the button visibly disables instead of round-tripping a 409.
-    return invoice.items.every((it) => it.productId && !it.needsReview && it.receivedQty !== null && it.receivedQty !== undefined && it.receivedQty >= 0)
+    // A line without a product is acceptable only when it is explicitly set to receive nothing (a line that is not a stock product).
+    return invoice.items.every((it) => (it.productId || it.receivedQty === 0) && !it.needsReview && it.receivedQty !== null && it.receivedQty !== undefined && it.receivedQty >= 0)
   }, [invoice])
+
+  // Stock is counted in cartons; the individual-unit equivalent is shown next to it for reference.
+  const summary = useMemo(() => {
+    const items = invoice?.items ?? []
+    return {
+      lines: items.length,
+      free: items.filter((it) => it.isFree).length,
+      cartons: items.reduce((sum, it) => sum + it.invoiceQty, 0),
+      units: items.reduce((sum, it) => sum + (it.totalUnits ?? 0), 0),
+      hasUnits: items.some((it) => it.totalUnits),
+    }
+  }, [invoice])
+  const declaredTotal = invoice?.invoiceTotal != null ? Number(invoice.invoiceTotal) : null
+  const linesTotal = invoice?.linesTotal != null ? Number(invoice.linesTotal) : null
+  const totalsKnown = declaredTotal !== null && linesTotal !== null
+  const totalsMatch = totalsKnown && Math.round(declaredTotal * 100) === Math.round(linesTotal * 100)
 
   if (isLoading) return <EmptyState title="Loading…" />
   if (!invoice) return <EmptyState title="Invoice not found" />
@@ -105,6 +122,23 @@ export default function StockIntakeDetail() {
         </div>
       </div>
 
+      {(declaredTotal !== null || linesTotal !== null) && (
+        <div
+          data-testid="totals-check"
+          className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg px-4 py-3 text-sm ${totalsKnown && !totalsMatch ? 'bg-rose-50 text-rose-700' : 'bg-ink-50 text-ink-700'}`}
+        >
+          {declaredTotal !== null && <span>Invoice total <strong>{formatCurrency(declaredTotal)}</strong></span>}
+          {linesTotal !== null && <span>Lines add up to <strong>{formatCurrency(linesTotal)}</strong></span>}
+          {totalsKnown && (totalsMatch ? (
+            <span className="flex items-center gap-1 font-medium text-emerald-700"><CheckCircle2 size={15} /> Totals match</span>
+          ) : (
+            <span className="flex items-center gap-1 font-medium"><AlertTriangle size={15} /> Totals do NOT match: a line may be missing or misread</span>
+          ))}
+          <span className="text-xs text-ink-500">
+            {summary.lines} lines{summary.free > 0 && ` (${summary.free} free of charge)`} · {summary.cartons} cartons{summary.hasUnits && ` = ${summary.units.toLocaleString('en-US')} units`}
+          </span>
+        </div>
+      )}
       {uploadWarnings.length > 0 && editable && (
         <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" data-testid="upload-warnings">
           <div className="flex items-center gap-2 font-medium">
@@ -132,7 +166,7 @@ export default function StockIntakeDetail() {
       <Card>
         <CardHeader
           title="Line Items"
-          subtitle="Received Qty is editable — only this quantity is added to stock, never the invoice quantity automatically."
+          subtitle="Received Qty is editable — only this quantity is added to stock, never the invoice quantity automatically. Quantities are counted in cartons (the stock unit); units are shown for reference. Set a line's Received Qty to 0 to leave it out."
         />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -141,6 +175,8 @@ export default function StockIntakeDetail() {
                 <th className="px-5 py-2.5">Description</th>
                 <th className="px-3 py-2.5">Match</th>
                 <th className="px-3 py-2.5 text-right">Invoice Qty</th>
+                <th className="px-3 py-2.5 text-right">Units</th>
+                <th className="px-3 py-2.5 text-right">Price</th>
                 <th className="px-3 py-2.5 text-right">Received Qty</th>
                 <th className="px-5 py-2.5">Status</th>
               </tr>
@@ -149,8 +185,18 @@ export default function StockIntakeDetail() {
               {invoice.items?.map((item) => (
                 <tr key={item.id} className="border-t border-ink-100">
                   <td className="px-5 py-3">
-                    <div className="font-medium text-ink-800">{item.rawDescription}</div>
+                    <div className="font-medium text-ink-800">
+                      {item.rawDescription}
+                      {item.isFree && <Badge className="ml-2 bg-emerald-50 text-emerald-700 ring-emerald-600/20">FREE</Badge>}
+                    </div>
                     {item.rawProductCode && <div className="text-xs text-ink-400">Code: {item.rawProductCode}</div>}
+                    {(item.batchNumber || item.expiryDate) && (
+                      <div className="text-xs text-ink-400">
+                        {item.batchNumber && <>Batch {item.batchNumber}</>}
+                        {item.batchNumber && item.expiryDate && ' · '}
+                        {item.expiryDate && <>Best before {new Date(item.expiryDate).toLocaleDateString('en-GB', { timeZone: 'UTC' })}</>}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-3">
                     {editable ? (
@@ -168,7 +214,27 @@ export default function StockIntakeDetail() {
                       <span className="text-xs text-ink-600">{item.product?.name ?? '—'}</span>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-right tabular-nums text-ink-600">{item.invoiceQty}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-ink-600 whitespace-nowrap">
+                    {item.invoiceQty}{item.unit ? ` ${item.unit}` : ''}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-ink-500 whitespace-nowrap">
+                    {item.totalUnits ? (
+                      <>
+                        {item.totalUnits.toLocaleString('en-US')}
+                        {item.packSize ? <div className="text-xs text-ink-400">{item.invoiceQty} × {item.packSize}</div> : null}
+                      </>
+                    ) : '—'}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-ink-600 whitespace-nowrap">
+                    {item.isFree ? (
+                      <span className="text-emerald-700">€0.00</span>
+                    ) : item.unitPrice != null ? (
+                      <>
+                        {formatCurrency(Number(item.unitPrice))}
+                        <div className="text-xs text-ink-400">per {item.priceBasis === 'CARTON' ? 'carton' : item.priceBasis === 'UNIT' ? 'unit' : '?'}{item.lineAmount != null && ` · ${formatCurrency(Number(item.lineAmount))}`}</div>
+                      </>
+                    ) : '—'}
+                  </td>
                   <td className="px-3 py-3 text-right">
                     {editable ? (
                       <input
@@ -183,7 +249,9 @@ export default function StockIntakeDetail() {
                     )}
                   </td>
                   <td className="px-5 py-3">
-                    {!item.productId ? (
+                    {!item.productId && item.receivedQty === 0 ? (
+                      <Badge className="bg-ink-100 text-ink-600 ring-ink-500/10">Left out (nothing received)</Badge>
+                    ) : !item.productId ? (
                       <Badge className="bg-rose-50 text-rose-600 ring-rose-600/20">⚠ Needs Review</Badge>
                     ) : item.needsReview ? (
                       <div className="flex flex-col items-start gap-1.5">
