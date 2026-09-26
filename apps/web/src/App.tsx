@@ -15,7 +15,6 @@ import StockRequests from './pages/StockRequests'
 import Transfers from './pages/Transfers'
 import Deliveries from './pages/Deliveries'
 import Activity from './pages/Activity'
-import Roadmap from './pages/Roadmap'
 import ShopCategories from './pages/shop/Categories'
 import ShopCategoryProducts from './pages/shop/CategoryProducts'
 import ShopCart from './pages/shop/Cart'
@@ -64,7 +63,6 @@ export default function App() {
             <Route path="/transfers" element={<Transfers />} />
             <Route path="/deliveries" element={<Deliveries />} />
             <Route path="/activity" element={<Activity />} />
-            <Route path="/roadmap" element={<Roadmap />} />
             <Route path="/shop" element={<ShopCategories />} />
             <Route path="/shop/cart" element={<ShopCart />} />
             <Route path="/shop/:categoryId" element={<ShopCategoryProducts />} />
@@ -72,6 +70,8 @@ export default function App() {
             <Route path="/stock-intake/:id" element={<StockIntakeDetail />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/users" element={<Users />} />
+            {/* Unknown paths (including the removed /roadmap) go to the dashboard; signed-out visitors are sent to /login first. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </CartProvider>

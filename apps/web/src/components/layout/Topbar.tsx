@@ -15,7 +15,8 @@ const TITLES: { match: (p: string) => boolean; title: string; subtitle: string }
   { match: (p) => p.startsWith('/deliveries'), title: 'Deliveries', subtitle: 'Picking and last-mile delivery' },
   { match: (p) => p.startsWith('/activity'), title: 'Activity', subtitle: 'Full audit trail of the network' },
   { match: (p) => p.startsWith('/users'), title: 'Users', subtitle: 'Accounts and password resets' },
-  { match: (p) => p.startsWith('/roadmap'), title: 'Roadmap', subtitle: "What's next for Asia Might Super Market" },
+  { match: (p) => p.startsWith('/stock-intake'), title: 'Stock Intake', subtitle: 'Supplier invoices, reviewed before stock is added' },
+  { match: (p) => p.startsWith('/documents'), title: 'Documents', subtitle: 'Order Confirmations and Delivery Challans' },
 ]
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {

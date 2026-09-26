@@ -10,8 +10,7 @@ export interface NotificationJobData {
 }
 
 /**
- * Stub processor — no email/SMS/WhatsApp provider is wired up yet (V1's
- * Roadmap correctly lists this as "Coming soon"). This exists so the job
+ * Stub processor — no email/SMS/WhatsApp provider is wired up yet. This exists so the job
  * shape and the worker plumbing are in place; wiring a real provider later
  * is a config + a `send()` call here, not an architecture change.
  */

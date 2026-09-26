@@ -8,7 +8,6 @@ import {
   ArrowLeftRight,
   Truck,
   Activity,
-  Map,
   X,
   FileText,
   FileUp,
@@ -42,7 +41,6 @@ const NAV: { to: string; label: string; icon: typeof LayoutDashboard; end?: bool
   { to: '/documents', label: 'Documents', icon: FileText, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/activity', label: 'Activity', icon: Activity, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
   { to: '/users', label: 'Users', icon: Users, roles: ['SUPER_ADMIN', 'WAREHOUSE_MANAGER'] },
-  { to: '/roadmap', label: 'Roadmap', icon: Map },
 ]
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {

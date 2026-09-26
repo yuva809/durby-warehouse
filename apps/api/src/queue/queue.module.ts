@@ -8,8 +8,7 @@ export const PRODUCT_IMAGE_QUEUE = 'product-image';
 /**
  * Registers BullMQ against the shared Redis instance.
  * - `activity`: writes to ActivityLog off the request-handling path.
- * - `notifications`: stubbed job type for future email/SMS/WhatsApp (V1's
- *   Roadmap page already promises this).
+ * - `notifications`: stubbed job type for future email/SMS/WhatsApp (not wired to a provider yet).
  * - `product-image`: background catalog-image enrichment for products
  *   matched/created during a supplier invoice upload — see
  *   product-images/product-image.processor.ts. Kept off the upload request
