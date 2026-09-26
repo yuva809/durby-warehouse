@@ -14,8 +14,9 @@ export function useTransfer(id: string | null) {
   })
 }
 
-export function useDrivers() {
-  return useQuery({ queryKey: ['drivers'], queryFn: transferService.getDrivers })
+/** Only managers/admins assign drivers, and only they may list users: everyone else must not even ask (it would 403). */
+export function useDrivers(enabled = true) {
+  return useQuery({ queryKey: ['drivers'], queryFn: transferService.getDrivers, enabled })
 }
 
 function invalidateTransfer(qc: ReturnType<typeof useQueryClient>) {

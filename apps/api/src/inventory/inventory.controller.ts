@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Post, Query } from '@nestjs/common';
 import { Role, MovementType } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
@@ -79,6 +79,13 @@ export class InventoryController {
 
   @Post('adjustments')
   async createAdjustment(@Body() dto: CreateAdjustmentDto, @CurrentUser() user: AuthUser) {
+    // Say what is actually wrong: an unknown id used to surface as a misleading "insufficient stock" conflict.
+    const [location, product] = await Promise.all([
+      this.prisma.location.findUnique({ where: { id: dto.locationId }, select: { id: true } }),
+      this.prisma.product.findUnique({ where: { id: dto.productId }, select: { id: true } }),
+    ]);
+    if (!location) throw new NotFoundException('That location does not exist.');
+    if (!product) throw new NotFoundException('That product does not exist.');
     const type = REASON_TO_MOVEMENT_TYPE[dto.reason];
     const reasonText = dto.note ? `${dto.reason}: ${dto.note}` : dto.reason;
 

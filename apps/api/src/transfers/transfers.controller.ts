@@ -2,6 +2,7 @@ import { Body, ConflictException, Controller, Get, Param, Post, Res } from '@nes
 import { Role } from '@prisma/client';
 import type { Response } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
+import { findWarehouse } from '../common/warehouse';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransfersService } from './transfers.service';
@@ -45,7 +46,7 @@ export class TransfersController {
     if (!transfer.dcNumber) {
       throw new ConflictException('Delivery Challan is not available until this transfer has been dispatched');
     }
-    const warehouse = await this.prisma.location.findFirst({ where: { type: 'WAREHOUSE' } });
+    const warehouse = await findWarehouse(this.prisma, { includeInactive: true });
     this.documents.renderDeliveryChallan(res, {
       dcNumber: transfer.dcNumber,
       code: transfer.code,

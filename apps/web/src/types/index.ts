@@ -260,5 +260,3 @@ export interface SupplierInvoice {
   items?: SupplierInvoiceItem[]
   _count?: { items: number }
 }
-
-export const WAREHOUSE_ID = 'warehouse'

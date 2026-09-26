@@ -1,8 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { LocationType, RequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { CodesService } from '../common/codes.service';
+import { findWarehouse } from '../common/warehouse';
 import { ActivityService } from '../activity/activity.service';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import type { CreateRequestDto } from './dto/request.dto';
@@ -35,7 +36,7 @@ export class RequestsService {
   }
 
   private async getWarehouse() {
-    const warehouse = await this.prisma.location.findFirst({ where: { type: LocationType.WAREHOUSE } });
+    const warehouse = await findWarehouse(this.prisma);
     if (!warehouse) throw new ConflictException('No central warehouse location is configured');
     return warehouse;
   }
@@ -77,6 +78,12 @@ export class RequestsService {
       throw new ForbiddenException('Only a branch user may create a stock request');
     }
 
+    // Validate the products BEFORE anything is created: an unknown id must be a clear 4xx, never a foreign-key 500.
+    const ids = dto.items.map((i) => i.productId);
+    if (new Set(ids).size !== ids.length) throw new BadRequestException('Each product can appear only once in a request.');
+    const known = await this.prisma.product.count({ where: { id: { in: ids }, active: true } });
+    if (known !== ids.length) throw new BadRequestException('One or more of the requested products do not exist or are no longer available.');
+
     const code = await this.codes.next('REQ');
     const ocNumber = await this.codes.next('OC');
     const request = await this.prisma.stockRequest.create({
@@ -108,7 +115,16 @@ export class RequestsService {
     if (!REVIEWABLE.includes(request.status)) {
       throw new ConflictException(`Cannot modify a request in status ${request.status}`);
     }
-    if (approvedQty < 0) throw new ConflictException('approvedQty cannot be negative');
+    // The limits are enforced HERE, on the server (the UI only mirrors them): a whole number, from 0 up to what the branch asked for.
+    const line = await this.prisma.stockRequestItem.findUnique({
+      where: { requestId_productId: { requestId: id, productId } },
+      include: { product: { select: { name: true } } },
+    });
+    if (!line) throw new NotFoundException('That product is not on this request');
+    if (!Number.isInteger(approvedQty) || approvedQty < 0) throw new BadRequestException('The approved quantity must be a whole number, 0 or more.');
+    if (approvedQty > line.requestedQty) {
+      throw new BadRequestException(`The approved quantity (${approvedQty}) cannot exceed the requested quantity (${line.requestedQty}) for ${line.product.name}.`);
+    }
 
     await this.prisma.stockRequestItem.update({
       where: { requestId_productId: { requestId: id, productId } },
@@ -147,6 +163,14 @@ export class RequestsService {
       if (!request) throw new NotFoundException('Request not found');
       if (!REVIEWABLE.includes(request.status)) {
         throw new ConflictException(`Cannot approve a request in status ${request.status}`);
+      }
+
+      // Defence in depth: whatever got stored, nothing above the requested quantity (or negative / fractional) may ever be reserved.
+      for (const it of request.items) {
+        const approved = it.approvedQty ?? it.requestedQty;
+        if (!Number.isInteger(approved) || approved < 0 || approved > it.requestedQty) {
+          throw new ConflictException('An approved quantity is outside the requested quantity. Correct it before approving.');
+        }
       }
 
       // Atomic claim — the actual concurrency guard, evaluated before any

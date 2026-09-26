@@ -12,7 +12,7 @@ import { useRequest, useMarkReviewing, useUpdateApprovedQty, useApproveRequest, 
 import { useInventory } from '../../hooks/useInventory'
 import { cn, formatDateTime } from '../../lib/utils'
 import { computeRequestTimeline } from '../../lib/requestTimeline'
-import { WAREHOUSE_ID } from '../../types'
+import { useWarehouse } from '../../hooks/useCatalog'
 import { ApiError } from '../../lib/apiClient'
 import { documentService } from '../../services/documentService'
 
@@ -37,7 +37,8 @@ export function RequestDrawer({
 
   const canReview = isManager && (request?.status === 'PENDING' || request?.status === 'REVIEWING')
   const canCancel = isBranchUser(user) && (request?.status === 'PENDING' || request?.status === 'REVIEWING')
-  const { data: warehouseInventory } = useInventory(WAREHOUSE_ID)
+  const { warehouseId, isMissing: noWarehouse } = useWarehouse()
+  const { data: warehouseInventory } = useInventory(warehouseId, { skip: !warehouseId })
   const available = useMemo(() => {
     const map = new Map<string, number>()
     for (const line of warehouseInventory ?? []) map.set(line.productId, line.available)
@@ -89,6 +90,9 @@ export function RequestDrawer({
     })
   }, [request, draftApproved, available])
 
+  /** The server enforces 0 <= approved <= requested; the field mirrors it so the manager can't type an impossible value. */
+  const clampApproved = (n: number, requested: number) => Math.min(requested, Math.max(0, Number.isFinite(n) ? Math.round(n) : 0))
+
   function persistQtyIfChanged(productId: string, qty: number) {
     if (!request) return
     const onServer = request.items.find((i) => i.productId === productId)?.approvedQty ?? request.items.find((i) => i.productId === productId)?.requestedQty
@@ -99,20 +103,20 @@ export function RequestDrawer({
 
   async function handleApprove() {
     if (!request) return
-    // Flush any edited-but-not-yet-blurred quantities before approving.
-    await Promise.all(
-      Object.entries(draftApproved).map(([productId, qty]) => {
-        const onServer = request.items.find((i) => i.productId === productId)?.approvedQty ?? request.items.find((i) => i.productId === productId)?.requestedQty
-        return qty !== onServer ? updateApprovedQty.mutateAsync({ id: request.id, productId, approvedQty: qty }) : Promise.resolve()
-      }),
-    )
     try {
+      // Flush any edited-but-not-yet-blurred quantities before approving.
+      await Promise.all(
+        Object.entries(draftApproved).map(([productId, qty]) => {
+          const onServer = request.items.find((i) => i.productId === productId)?.approvedQty ?? request.items.find((i) => i.productId === productId)?.requestedQty
+          return qty !== onServer ? updateApprovedQty.mutateAsync({ id: request.id, productId, approvedQty: qty }) : Promise.resolve()
+        }),
+      )
       const transfer = await approveRequest.mutateAsync(request.id)
       setJustApprovedTransferId(transfer.id)
+      setConfirming(false)
     } catch {
-      // ApiError already surfaced via approveRequest.error below
+      // Stay on the confirmation so the server's message (e.g. "cannot exceed the requested quantity") is visible below.
     }
-    setConfirming(false)
   }
 
   function handleReject() {
@@ -214,6 +218,11 @@ export function RequestDrawer({
           <Timeline steps={computeRequestTimeline(request, linkedTransfer)} />
         </div>
 
+        {updateApprovedQty.isError && !confirming && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <AlertTriangle size={14} className="shrink-0" /> {updateApprovedQty.error instanceof ApiError ? updateApprovedQty.error.message : 'Could not save that quantity'}
+          </div>
+        )}
         <div className="space-y-3">
           {rows.map(({ item, product, available: stock, approved, sufficient, pickedQty, deliveredQty, shortageReason }) => {
             const isApproved = item.approvedQty !== undefined && item.approvedQty !== null
@@ -256,8 +265,9 @@ export function RequestDrawer({
                         type="number"
                         min={0}
                         value={approved}
-                        onChange={(e) => setDraftApproved((s) => ({ ...s, [item.productId]: Math.max(0, Number(e.target.value)) }))}
-                        onBlur={(e) => persistQtyIfChanged(item.productId, Math.max(0, Number(e.target.value)))}
+                        max={item.requestedQty}
+                        onChange={(e) => setDraftApproved((s) => ({ ...s, [item.productId]: clampApproved(Number(e.target.value), item.requestedQty) }))}
+                        onBlur={(e) => persistQtyIfChanged(item.productId, clampApproved(Number(e.target.value), item.requestedQty))}
                         className={cn(
                           'w-full rounded-md bg-ink-50 px-2 py-1 text-sm font-semibold tabular-nums outline-none ring-1 ring-inset focus:ring-brand-400',
                           approved !== item.requestedQty ? 'ring-amber-300 text-amber-700' : 'ring-ink-200 text-ink-700',
@@ -333,10 +343,15 @@ export function RequestDrawer({
             </div>
           </div>
 
-          {approveRequest.isError && (
+          {noWarehouse && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle size={14} className="shrink-0" /> No warehouse has been set up yet, so stock levels can't be shown and the request can't be approved.
+            </div>
+          )}
+          {(approveRequest.isError || updateApprovedQty.isError) && (
             <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
               <AlertTriangle size={14} className="shrink-0" />
-              {approveRequest.error instanceof ApiError ? approveRequest.error.message : 'Could not approve this request'}
+              {[approveRequest.error, updateApprovedQty.error].find((e) => e instanceof ApiError)?.message ?? 'Could not approve this request'}
             </div>
           )}
 

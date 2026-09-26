@@ -3,13 +3,14 @@ import { inventoryService } from '../services/inventoryService'
 import { useAuthStore } from '../auth/authStore'
 
 /** Manager/admin only — the API 403s for any other role, so this is never called from a branch/driver screen. */
-export function useInventory(locationId?: string) {
+export function useInventory(locationId?: string, opts: { skip?: boolean } = {}) {
   const role = useAuthStore((s) => s.user?.role)
   const canSee = role === 'SUPER_ADMIN' || role === 'WAREHOUSE_MANAGER'
   return useQuery({
     queryKey: ['inventory', locationId ?? 'all'],
     queryFn: () => inventoryService.getInventory(locationId),
-    enabled: canSee,
+    // `skip`: the caller wants ONE location but does not know its id yet: never fall back to "all locations".
+    enabled: canSee && !opts.skip,
   })
 }
 

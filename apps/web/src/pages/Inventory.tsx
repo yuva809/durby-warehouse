@@ -4,15 +4,16 @@ import { Search } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { ProductDrawer } from '../components/inventory/ProductDrawer'
-import { useProducts, useLocations } from '../hooks/useCatalog'
+import { useProducts, useLocations, useWarehouse } from '../hooks/useCatalog'
 import { useInventory } from '../hooks/useInventory'
 import { STATUS_STYLES, cn, stockStatus } from '../lib/utils'
-import { WAREHOUSE_ID, type StockStatus } from '../types'
+import type { StockStatus } from '../types'
 
 export default function Inventory() {
   const { data: products = [] } = useProducts()
   const { data: locations = [] } = useLocations()
   const { data: inventoryLines = [] } = useInventory()
+  const { warehouseId, isMissing: noWarehouse } = useWarehouse()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [params, setParams] = useSearchParams()
@@ -43,6 +44,9 @@ export default function Inventory() {
 
   return (
     <div className="space-y-5">
+      {noWarehouse && (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">No warehouse has been set up yet, so the Warehouse column can't show stock. Set up the warehouse and branches first.</div>
+      )}
       <Card className="flex flex-wrap items-center gap-3 p-4">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
@@ -103,7 +107,7 @@ export default function Inventory() {
                   <td className="px-3 py-3 text-ink-500 whitespace-nowrap">{product.category}</td>
                   <td className="px-3 py-3 text-ink-500 whitespace-nowrap">{product.pack ?? '—'}</td>
                   <td className="px-3 py-3 text-right tabular-nums text-ink-700 whitespace-nowrap">
-                    {byLocationProduct.get(`${WAREHOUSE_ID}:${product.id}`) ?? 0} {product.unit}
+                    {noWarehouse ? '—' : `${byLocationProduct.get(`${warehouseId}:${product.id}`) ?? 0} ${product.unit}`}
                   </td>
                   {branches.map((b) => {
                     const qty = byLocationProduct.get(`${b.id}:${product.id}`) ?? 0

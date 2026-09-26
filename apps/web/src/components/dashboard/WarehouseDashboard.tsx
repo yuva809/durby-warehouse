@@ -9,17 +9,17 @@ import { InventoryHealthChart } from './InventoryHealthChart'
 import { BranchStockChart } from './BranchStockChart'
 import { RequestDrawer } from '../requests/RequestDrawer'
 import { TransferDrawer } from '../transfers/TransferDrawer'
-import { useProducts, useLocations } from '../../hooks/useCatalog'
+import { useProducts, useLocations, useWarehouse } from '../../hooks/useCatalog'
 import { useInventory } from '../../hooks/useInventory'
 import { useRequests } from '../../hooks/useRequests'
 import { useTransfers } from '../../hooks/useTransfers'
 import { formatCurrency, formatDateTime, stockStatus, transferDocNumber } from '../../lib/utils'
-import { WAREHOUSE_ID } from '../../types'
 
 export function WarehouseDashboard() {
   const { data: products = [] } = useProducts()
   const { data: locations = [] } = useLocations()
   const { data: inventoryLines = [] } = useInventory() // all locations, manager/admin only
+  const { warehouseId, isMissing: noWarehouse } = useWarehouse()
   const { data: requests = [] } = useRequests()
   const { data: transfers = [] } = useTransfers()
   const navigate = useNavigate()
@@ -35,7 +35,7 @@ export function WarehouseDashboard() {
   }, [inventoryLines])
 
   const kpis = useMemo(() => {
-    const warehouseValue = products.reduce((sum, p) => sum + (byLocationProduct.get(`${WAREHOUSE_ID}:${p.id}`) ?? 0) * p.unitPrice, 0)
+    const warehouseValue = products.reduce((sum, p) => sum + (byLocationProduct.get(`${warehouseId}:${p.id}`) ?? 0) * p.unitPrice, 0)
     const pending = requests.filter((r) => r.status === 'PENDING' || r.status === 'REVIEWING').length
     let lowStock = 0
     for (const b of branches) {
@@ -46,7 +46,7 @@ export function WarehouseDashboard() {
     }
     const todaysDeliveries = transfers.filter((t) => t.status !== 'READY').length
     return { warehouseValue, pending, lowStock, todaysDeliveries }
-  }, [products, byLocationProduct, requests, transfers, branches])
+  }, [products, byLocationProduct, requests, transfers, branches, warehouseId])
 
   const health = useMemo(() => {
     let healthy = 0, low = 0, out = 0
@@ -78,6 +78,12 @@ export function WarehouseDashboard() {
 
   return (
     <div className="space-y-5">
+      {noWarehouse && (
+        <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>No warehouse has been set up yet, so warehouse stock can't be shown. Set up the warehouse and branches first, then receive stock.</span>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard icon={<Package size={16} />} label="Total Products" value={products.length} tone="brand" />
         <StatCard icon={<Warehouse size={16} />} label="Warehouse Stock" value={formatCurrency(kpis.warehouseValue)} tone="brand" />

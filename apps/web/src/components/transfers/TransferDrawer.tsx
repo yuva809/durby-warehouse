@@ -37,7 +37,7 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
   const isBranch = isBranchUser(user)
 
   const { data: transfer } = useTransfer(transferId)
-  const { data: drivers = [] } = useDrivers()
+  const { data: drivers = [] } = useDrivers(isManager)
   const [driverPick, setDriverPick] = useState('')
   const [failReason, setFailReason] = useState('')
   const [failing, setFailing] = useState(false)
@@ -89,16 +89,20 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
    * approved-qty edits before approving.
    */
   async function handleDispatch() {
-    await Promise.all(
-      transfer!.items.map((item) => {
-        const draftQty = pickedDraft[item.productId]
-        const draftReason = pickedReasonDraft[item.productId]
-        if (draftQty === undefined) return Promise.resolve()
-        const reason = draftReason ?? item.shortageReason ?? undefined
-        if (draftQty === item.pickedQty && (reason?.trim() ?? '') === (item.shortageReason ?? '')) return Promise.resolve()
-        return setPickedQty.mutateAsync({ transferId: transfer!.id, productId: item.productId, pickedQty: draftQty, reason })
-      }),
-    )
+    try {
+      await Promise.all(
+        transfer!.items.map((item) => {
+          const draftQty = pickedDraft[item.productId]
+          const draftReason = pickedReasonDraft[item.productId]
+          if (draftQty === undefined) return Promise.resolve()
+          const reason = draftReason ?? item.shortageReason ?? undefined
+          if (draftQty === item.pickedQty && (reason?.trim() ?? '') === (item.shortageReason ?? '')) return Promise.resolve()
+          return setPickedQty.mutateAsync({ transferId: transfer!.id, productId: item.productId, pickedQty: draftQty, reason })
+        }),
+      )
+    } catch {
+      return // the picked-quantity error is shown below; do not start the delivery on a failed save
+    }
     dispatch.mutate(transfer!.id)
   }
 
@@ -272,10 +276,10 @@ export function TransferDrawer({ transferId, onClose }: { transferId: string | n
               <Button className="mt-4 w-full" size="lg" disabled={dispatch.isPending || setPickedQty.isPending || anyPickReasonMissing} onClick={handleDispatch}>
                 <ArrowRight size={16} /> {dispatch.isPending || setPickedQty.isPending ? 'Starting…' : 'Start Delivery'}
               </Button>
-              {dispatch.isError && (
+              {(dispatch.isError || setPickedQty.isError) && (
                 <div className="mt-2 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
                   <AlertTriangle size={14} className="shrink-0" />
-                  {dispatch.error instanceof ApiError ? dispatch.error.message : 'Could not start delivery'}
+                  {[dispatch.error, setPickedQty.error].find((e) => e instanceof ApiError)?.message ?? 'Could not start delivery'}
                 </div>
               )}
             </div>

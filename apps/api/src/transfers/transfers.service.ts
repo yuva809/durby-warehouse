@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ActivityService } from '../activity/activity.service';
 import { CodesService } from '../common/codes.service';
+import { findWarehouse } from '../common/warehouse';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import type { DeliveredItemDto, SetPickedQtyDto } from './dto/transfer.dto';
 
@@ -211,7 +212,7 @@ export class TransfersService {
       const dcNumber = await this.codes.next('DC', tx);
       await tx.transfer.update({ where: { id }, data: { dcNumber } });
 
-      const warehouse = await tx.location.findFirst({ where: { type: 'WAREHOUSE' } });
+      const warehouse = await findWarehouse(tx, { includeInactive: true });
       if (!warehouse) throw new ConflictException('No central warehouse location is configured');
 
       for (const item of transfer.items) {

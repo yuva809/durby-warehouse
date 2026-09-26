@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { inventoryService } from '../services/inventoryService'
+import { pickWarehouse } from '../lib/warehouse'
 
 export function useProducts() {
   return useQuery({ queryKey: ['products'], queryFn: inventoryService.getProducts })
@@ -15,6 +16,13 @@ export function useProduct(productId: string | null) {
 
 export function useLocations() {
   return useQuery({ queryKey: ['locations'], queryFn: inventoryService.getLocations })
+}
+
+/** The active warehouse, from the API's own location data. `isMissing` = locations loaded but none is a warehouse. */
+export function useWarehouse() {
+  const { data: locations, isLoading } = useLocations()
+  const warehouse = pickWarehouse(locations)
+  return { warehouse, warehouseId: warehouse?.id, isLoading, isMissing: !isLoading && !!locations && !warehouse }
 }
 
 export function useWarehouseAvailability(filter: { categoryId?: string; search?: string } = {}) {

@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { useAuthStore } from './auth/authStore'
+import { canAccessPath } from './auth/access'
 import { CartProvider } from './cart/CartContext'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
@@ -33,6 +34,17 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   return children
 }
 
+/**
+ * Role-based page access (see auth/access.ts). Typing a URL you may not use lands on the Dashboard instead of a
+ * half-working page. This is a courtesy for the user: the API remains the authority and refuses the data anyway.
+ */
+function RoleGuard() {
+  const role = useAuthStore((s) => s.user?.role)
+  const { pathname } = useLocation()
+  if (!canAccessPath(role, pathname)) return <Navigate to="/" replace />
+  return <Outlet />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -56,24 +68,26 @@ export default function App() {
               </RequireAuth>
             }
           >
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/inventory" element={<Inventory />} />
-            <Route path="/products" element={<Products />} />
-            <Route path="/branches" element={<Branches />} />
-            <Route path="/branches/:branchId" element={<BranchDetail />} />
-            <Route path="/requests" element={<StockRequests />} />
-            <Route path="/transfers" element={<Transfers />} />
-            <Route path="/deliveries" element={<Deliveries />} />
-            <Route path="/activity" element={<Activity />} />
-            <Route path="/shop" element={<ShopCategories />} />
-            <Route path="/shop/cart" element={<ShopCart />} />
-            <Route path="/shop/:categoryId" element={<ShopCategoryProducts />} />
-            <Route path="/stock-intake" element={<StockIntake />} />
-            <Route path="/stock-intake/:id" element={<StockIntakeDetail />} />
-            <Route path="/documents" element={<Documents />} />
-            <Route path="/users" element={<Users />} />
-            {/* Unknown paths (including the removed /roadmap) go to the dashboard; signed-out visitors are sent to /login first. */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route element={<RoleGuard />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/products" element={<Products />} />
+              <Route path="/branches" element={<Branches />} />
+              <Route path="/branches/:branchId" element={<BranchDetail />} />
+              <Route path="/requests" element={<StockRequests />} />
+              <Route path="/transfers" element={<Transfers />} />
+              <Route path="/deliveries" element={<Deliveries />} />
+              <Route path="/activity" element={<Activity />} />
+              <Route path="/shop" element={<ShopCategories />} />
+              <Route path="/shop/cart" element={<ShopCart />} />
+              <Route path="/shop/:categoryId" element={<ShopCategoryProducts />} />
+              <Route path="/stock-intake" element={<StockIntake />} />
+              <Route path="/stock-intake/:id" element={<StockIntakeDetail />} />
+              <Route path="/documents" element={<Documents />} />
+              <Route path="/users" element={<Users />} />
+              {/* Unknown paths (including the removed /roadmap) go to the dashboard; signed-out visitors are sent to /login first. */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
           </Route>
         </Routes>
       </CartProvider>

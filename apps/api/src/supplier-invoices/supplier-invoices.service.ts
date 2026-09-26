@@ -3,6 +3,7 @@ import { SupplierInvoiceStatus, MovementType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { CodesService } from '../common/codes.service';
+import { findWarehouse } from '../common/warehouse';
 import { ActivityService } from '../activity/activity.service';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { CsvInvoiceParser } from './parsers/csv.parser';
@@ -241,7 +242,7 @@ export class SupplierInvoicesService {
         throw new ConflictException('This invoice has already been confirmed or cancelled — inventory was not changed again.');
       }
 
-      const warehouse = await tx.location.findFirst({ where: { type: 'WAREHOUSE' } });
+      const warehouse = await findWarehouse(tx);
       if (!warehouse) throw new ConflictException('No central warehouse location is configured');
 
       for (const item of invoice.items) {

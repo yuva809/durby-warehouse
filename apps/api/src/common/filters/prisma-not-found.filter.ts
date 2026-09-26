@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, ConflictException, ExceptionFilter, NotFoundException } from '@nestjs/common';
+import { ArgumentsHost, BadRequestException, Catch, ConflictException, ExceptionFilter, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Response } from 'express';
 
@@ -13,6 +13,9 @@ import type { Response } from 'express';
  * naming the conflicting field, so a predictable, expected user input error
  * (a manager typing a barcode that's already on another product) reads as
  * a clean validation message instead of a raw 500 with a stack trace.
+ * P2003 ("foreign key constraint failed") means the request referenced a record that does not exist (a made-up productId,
+ * locationId, ...): that is the caller's mistake, so it is a clear 400 naming what is missing rather than a 500.
+ * Endpoints with a more specific check (e.g. POST /requests) give a friendlier message before ever reaching here.
  * Everything else re-throws completely unchanged.
  */
 @Catch(Prisma.PrismaClientKnownRequestError)
@@ -31,6 +34,14 @@ export class PrismaNotFoundFilter implements ExceptionFilter {
       const fields = Array.isArray(target) ? target.join(', ') : String(target ?? 'field');
       const conflict = new ConflictException(`A record with this ${fields} already exists.`);
       response.status(conflict.getStatus()).json(conflict.getResponse());
+      return;
+    }
+
+    if (exception.code === 'P2003') {
+      const raw = String(exception.meta?.field_name ?? exception.meta?.constraint ?? '');
+      const what = /product/i.test(raw) ? 'product' : /location|branch|warehouse/i.test(raw) ? 'location' : /user|driver|createdBy|uploadedBy/i.test(raw) ? 'user' : /request/i.test(raw) ? 'request' : /category/i.test(raw) ? 'category' : 'record';
+      const bad = new BadRequestException(`The referenced ${what} does not exist.`);
+      response.status(bad.getStatus()).json(bad.getResponse());
       return;
     }
 

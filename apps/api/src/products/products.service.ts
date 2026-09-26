@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { findWarehouse } from '../common/warehouse';
 import type { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 
 @Injectable()
@@ -28,7 +29,7 @@ export class ProductsService {
    * trust boundary.
    */
   async listWarehouseAvailability(filter?: { categoryId?: string; search?: string }) {
-    const warehouse = await this.prisma.location.findFirst({ where: { type: 'WAREHOUSE' } });
+    const warehouse = await findWarehouse(this.prisma);
     if (!warehouse) return [];
 
     const where: Record<string, unknown> = { active: true };

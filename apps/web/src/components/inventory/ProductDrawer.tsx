@@ -9,7 +9,6 @@ import { useActivity } from '../../hooks/useActivity'
 import { useAuthStore } from '../../auth/authStore'
 import { isManager } from '../../auth/roles'
 import { STATUS_STYLES, formatCurrency, formatTime, stockStatus } from '../../lib/utils'
-import { WAREHOUSE_ID } from '../../types'
 import { Clock, CalendarClock, Pencil } from 'lucide-react'
 
 function formatExpiry(iso: string) {
@@ -90,7 +89,7 @@ export function ProductDrawer({ productId, onClose }: { productId: string | null
       <div className="mt-2 divide-y divide-ink-100 overflow-hidden rounded-xl ring-1 ring-ink-200/70">
         {locations.map((loc) => {
           const qty = byLocation.get(loc.id) ?? 0
-          const status = loc.id === WAREHOUSE_ID ? 'healthy' : stockStatus(qty, product.minStock)
+          const status = loc.type === 'WAREHOUSE' ? 'healthy' : stockStatus(qty, product.minStock)
           const style = STATUS_STYLES[status]
           return (
             <div key={loc.id} className="flex items-center justify-between bg-white px-4 py-3">
@@ -99,7 +98,7 @@ export function ProductDrawer({ productId, onClose }: { productId: string | null
                 <span className="text-sm font-semibold tabular-nums text-ink-900">
                   {qty} {product.unit}
                 </span>
-                {loc.id !== WAREHOUSE_ID && (
+                {loc.type !== 'WAREHOUSE' && (
                   <Badge className={style.badge} dot={style.dot}>
                     {status === 'healthy' ? 'Healthy' : status === 'low' ? 'Low' : 'Out'}
                   </Badge>

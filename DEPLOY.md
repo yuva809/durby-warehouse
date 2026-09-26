@@ -49,7 +49,8 @@ node scripts/e2e-smoke-test.mjs                # request → transfer → delive
 ./scripts/rate-limit-proxy-test.sh             # per-client rate limiting through Caddy (local stack only)
 cd apps/api && npm run test:trust-proxy        # no DB/Docker needed
 # these need DATABASE_URL pointing at the stack's Postgres (e.g. postgresql://…@localhost:5433/…):
-npm run test:password-flows && npm run test:user-access && npm run test:reset-admin-password && npm run test:supplier-invoice-upload && npm run test:production-init
+npm run test:password-flows && npm run test:user-access && npm run test:reset-admin-password && npm run test:supplier-invoice-upload && npm run test:production-init && npm run test:audit-fixes
+cd ../web && npm run test:logic                # route access + warehouse lookup (pure logic, no browser)
 ```
 
 Standalone frontend with hot reload:
@@ -250,6 +251,10 @@ you invite a person, the app gives you a **one-time link**, and they open it and
 
 **Setup order** (the invite form tells you when a step is missing): create the warehouse and branches first (§5 step 4), then invite people.
 A branch user can only be invited into an **existing, active branch**.
+
+**One warehouse, many branches.** The application supports exactly one active warehouse. The API refuses a second one (409, also when two are
+created at the same instant, and when re-activating an old warehouse while another is active). To replace it, deactivate the current one first.
+The screens find the warehouse from the location data (its type), never by a fixed id, and say so clearly if none has been set up yet.
 
 1. **You (Super Admin) create the Warehouse Manager:** Users, **Invite user**, choose *Warehouse Manager*, enter their name and email, **Create invitation**.
 2. **Give them the link** shown once (copy it; it can't be shown again: only a hash is stored). Send it privately (in person or a direct message). It is valid for 72 hours
