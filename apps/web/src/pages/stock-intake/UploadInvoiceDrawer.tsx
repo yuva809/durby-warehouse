@@ -29,10 +29,14 @@ export function UploadInvoiceDrawer({ open, onClose }: { open: boolean; onClose:
 
   async function handleSubmit() {
     if (!file || !supplierName.trim() || !invoiceNumber.trim()) return
-    const invoice = await upload.mutateAsync({ file, supplierName: supplierName.trim(), invoiceNumber: invoiceNumber.trim(), invoiceDate: invoiceDate || undefined })
-    reset()
-    onClose()
-    navigate(`/stock-intake/${invoice.id}`, { state: { warnings: invoice.warnings } })
+    try {
+      const invoice = await upload.mutateAsync({ file, supplierName: supplierName.trim(), invoiceNumber: invoiceNumber.trim(), invoiceDate: invoiceDate || undefined })
+      reset()
+      onClose()
+      navigate(`/stock-intake/${invoice.id}`, { state: { warnings: invoice.warnings } })
+    } catch {
+      // shown in the drawer footer via upload.error
+    }
   }
 
   const canSubmit = !!file && supplierName.trim().length > 0 && invoiceNumber.trim().length > 0

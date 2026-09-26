@@ -16,6 +16,7 @@ const TITLES: { match: (p: string) => boolean; title: string; subtitle: string }
   { match: (p) => p.startsWith('/activity'), title: 'Activity', subtitle: 'Full audit trail of the network' },
   { match: (p) => p.startsWith('/stock-intake'), title: 'Stock Intake', subtitle: 'Supplier invoices, reviewed before stock is added' },
   { match: (p) => p.startsWith('/documents'), title: 'Documents', subtitle: 'Order Confirmations and Delivery Challans' },
+  { match: (p) => p.startsWith('/shop'), title: 'Order Stock', subtitle: 'Browse the warehouse and request what your branch needs' },
   { match: (p) => p.startsWith('/users'), title: 'Users', subtitle: 'Invite people and manage who has access' },
 ]
 

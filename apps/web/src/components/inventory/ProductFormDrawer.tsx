@@ -67,12 +67,16 @@ export function ProductFormDrawer({ product, open, onClose }: { product: Product
       minStock: Number(minStock) || 0,
       unitPrice: Number(unitPrice),
     }
-    if (isEdit) {
-      await update.mutateAsync({ id: product!.id, dto: shared })
-    } else {
-      await create.mutateAsync({ sku: sku.trim(), ...shared })
+    try {
+      if (isEdit) {
+        await update.mutateAsync({ id: product!.id, dto: shared })
+      } else {
+        await create.mutateAsync({ sku: sku.trim(), ...shared })
+      }
+      onClose()
+    } catch {
+      // shown in the drawer footer via mutationError
     }
-    onClose()
   }
 
   return (

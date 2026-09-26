@@ -24,9 +24,13 @@ export default function ShopCart() {
   async function handleSubmit() {
     const items = lines.map((l) => ({ productId: l.product.productId, requestedQty: l.qty }))
     if (items.length === 0) return
-    const request = await submit.mutateAsync(items)
-    setSubmittedOc(request.ocNumber)
-    cart.clear()
+    try {
+      const request = await submit.mutateAsync(items)
+      setSubmittedOc(request.ocNumber)
+      cart.clear()
+    } catch {
+      // shown below via submit.error
+    }
   }
 
   if (submittedOc) {

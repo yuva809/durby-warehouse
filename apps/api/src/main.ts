@@ -8,6 +8,9 @@ import { configureTrustProxy } from './common/trust-proxy';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Don't announce the framework in every response header.
+  app.disable('x-powered-by');
+
   // Behind Caddy, the direct peer is always the proxy — without this every
   // client shares one rate-limit bucket. Trusts ONLY the address(es) in
   // TRUST_PROXY (docker-compose pins Caddy's IP); unset = trust nothing.

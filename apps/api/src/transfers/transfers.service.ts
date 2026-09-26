@@ -328,6 +328,8 @@ export class TransfersService {
     if (transfer.status !== TransferStatus.DELIVERED && transfer.status !== TransferStatus.PARTIALLY_DELIVERED) {
       throw new ConflictException(`Cannot confirm receipt for a transfer in status ${transfer.status}`);
     }
+    // Already signed off: a repeat is a harmless no-op. Don't overwrite who/when, and don't log it a second time.
+    if (transfer.confirmedAt) return transfer;
     const updated = await this.prisma.transfer.update({
       where: { id },
       data: { confirmedAt: new Date(), confirmedById: user.userId },

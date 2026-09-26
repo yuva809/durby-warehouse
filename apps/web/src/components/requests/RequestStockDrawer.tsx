@@ -69,8 +69,12 @@ export function RequestStockDrawer({ open, onClose }: { open: boolean; onClose: 
   async function handleSubmit() {
     const items = Object.entries(selected).map(([productId, requestedQty]) => ({ productId, requestedQty }))
     if (items.length === 0) return
-    const request = await submit.mutateAsync(items)
-    setSubmittedCode(request.ocNumber)
+    try {
+      const request = await submit.mutateAsync(items)
+      setSubmittedCode(request.ocNumber)
+    } catch {
+      // shown below via submit.error
+    }
   }
 
   const selectedIds = Object.keys(selected)

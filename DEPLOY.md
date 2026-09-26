@@ -465,6 +465,18 @@ sudo docker compose up -d
 - **No location or category screens.** These are done through the API (§5, step 4). People are invited and managed on the **Users** screen. Invitation links are
   shown to the inviter to hand over; they are not emailed (no mail service is configured). Keep a second `SUPER_ADMIN` as the recovery path (the server-shell break-glass command in §5 is the last resort).
 - **Password reset needs an administrator** and a private handover of the one-time code (no email/SMS). Reset codes last 60 minutes.
+- **Warehouse, branch and category setup has no screen.** They are created through the API only (§5, step 4); the app shows a plain "not set up yet"
+  message where a warehouse is needed. There is also no screen for replacing the single warehouse: deactivate the old one, then create the new one.
+  Deactivating the only warehouse is allowed, and replacing it while deliveries are in flight makes dispatch use the *current* warehouse, so do
+  that only when nothing is approved-but-undispatched.
+- **Partial-delivery status.** A request whose approved or picked quantity was *lower* than requested still ends as "Delivered". It only becomes
+  "Partially delivered" when less was delivered than was picked. The shortfall is visible in the transfer's items and shortage reasons and in the
+  Delivery Challan, not in the request's headline status.
+- **Logging out does not invalidate the token on the server.** Sign-out discards the token in the browser only; a copied JWT stays valid until it
+  expires (`JWT_EXPIRES_IN`, default 12 h) or the user's password is changed/reset or the user is deactivated (each bumps the session version).
+- **The real PaddleOCR path (scanned, image-only invoices) has not been verified end-to-end on this codebase's latest build.** Automated tests use a
+  contract stub that replays recorded OCR output, and it could not be run under emulation locally. After a deployment, upload one real scanned invoice
+  and review every line before confirming (§7). Text-layer PDFs do not need OCR and are tested.
 - **Manager screens poll rather than push** (~15 s cache). The backend's locking, not the UI, prevents
   double-approval, so this is only a refresh-speed note.
 - **OCR inference is unverified on real hardware** (see §7).

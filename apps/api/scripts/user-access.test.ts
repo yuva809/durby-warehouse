@@ -91,7 +91,7 @@ async function main() {
     prisma = new PrismaClient({ datasourceUrl: dbUrl });
 
     const ownerLogin = await login(OWNER, OWNER_PW);
-    const ownerTok: string = ownerLogin.data.accessToken;
+    let ownerTok: string = ownerLogin.data.accessToken;
     const ownerId: string = ownerLogin.data.user.id;
 
     // small helpers
@@ -366,6 +366,8 @@ async function main() {
     // restore whichever was deactivated, using the survivor
     const survivor = (await dbUser(OWNER)).active ? { tok: ownerTok, other: sa2.id } : { tok: sa2b.data.accessToken as string, other: ownerId };
     ok((await call('POST', `/users/${survivor.other}/reactivate`, { token: survivor.tok })).status < 300, '...and the survivor can reactivate the other');
+    // Either admin may have won the race; a reactivated account's old sessions are (correctly) dead, so sign in fresh.
+    ownerTok = (await login(OWNER, OWNER_PW)).data.accessToken as string;
     ok((await call('POST', '/users', { token: ownerTok, body: { email: 'promote@uatest-company.io', name: 'P', password: 'legacy-password-1', role: 'SUPER_ADMIN' } })).status === 201, 'a Super Admin can create a Super Admin (legacy path), which a manager cannot');
 
     // ================= H. access boundaries =================

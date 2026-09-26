@@ -45,6 +45,7 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
     useAuthStore.getState().setMustChangePassword(true)
   }
 
+  if (res.status === 429) throw new ApiError(429, { message: 'Too many attempts. Please wait a minute and try again.' })
   if (!res.ok) throw new ApiError(res.status, data)
   return data as T
 }

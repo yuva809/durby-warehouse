@@ -59,7 +59,12 @@ export default function StockIntakeDetail() {
 
   async function handleCancel() {
     if (!window.confirm('Cancel this invoice? It will not be possible to confirm it afterwards.')) return
-    await cancel.mutateAsync(invoice!.id)
+    setError(null)
+    try {
+      await cancel.mutateAsync(invoice!.id)
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
   return (
