@@ -1,4 +1,5 @@
-import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { MAX_QUANTITY } from '../../common/limits';
 
 export class CreateProductDto {
   @IsString()
@@ -34,6 +35,7 @@ export class CreateProductDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(MAX_QUANTITY)
   minStock?: number;
 
   @IsNumber()
@@ -73,6 +75,7 @@ export class UpdateProductDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(MAX_QUANTITY)
   minStock?: number;
 
   @IsOptional()

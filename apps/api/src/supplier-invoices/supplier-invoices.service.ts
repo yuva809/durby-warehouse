@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, HttpException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { SupplierInvoiceStatus, MovementType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -9,6 +9,7 @@ import { CsvInvoiceParser } from './parsers/csv.parser';
 import { ExcelInvoiceParser } from './parsers/excel.parser';
 import { PdfInvoiceParser } from './parsers/pdf.parser';
 import type { SupplierInvoiceParser } from './parsers/types';
+import { MAX_INVOICE_QTY } from './parsers/quantity';
 import { ImportMatchingService } from './matching.service';
 import { ProductImageQueueService } from '../product-images/product-image-queue.service';
 import { displayImageUrl } from '../product-images/image-url.util';
@@ -24,6 +25,7 @@ export interface UploadedFile {
 
 @Injectable()
 export class SupplierInvoicesService {
+  private readonly logger = new Logger(SupplierInvoicesService.name);
   private parsers: SupplierInvoiceParser[];
 
   constructor(
@@ -107,10 +109,29 @@ export class SupplierInvoicesService {
       throw new ConflictException(`Unsupported file type "${file.mimetype || file.originalname}". Supported: CSV, XLSX, XLSM, PDF.`);
     }
 
-    const parsed = await parser.parse(file.buffer);
+    let parsed;
+    try {
+      parsed = await parser.parse(file.buffer);
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      // A corrupt / password-protected PDF, a malformed spreadsheet, etc. The full error goes to the server log; the manager
+      // gets a clear, safe message and can fix the file or re-export it, instead of a bare "Internal server error".
+      this.logger.error(`Could not parse "${file.originalname}" (${file.mimetype}): ${(err as Error).stack ?? err}`);
+      const reason = String((err as Error).message ?? '').split('\n')[0].slice(0, 160);
+      throw new UnprocessableEntityException(`This file could not be read${reason ? ` (${reason})` : ''}. Check that it is a valid, unprotected PDF, CSV or Excel file, or re-export it.`);
+    }
     if (parsed.rows.length === 0) {
       throw new ConflictException(
         `No product rows could be read from this file.${parsed.warnings.length ? ' ' + parsed.warnings.join(' ') : ''}`,
+      );
+    }
+
+    // Last line of defence before the database: the parsers already refuse implausible quantities (see parsers/quantity.ts),
+    // but a row that reached this point with a quantity the column cannot hold must be a clear 422 naming the row, never a 500.
+    const unusable = parsed.rows.filter((r) => !Number.isInteger(r.quantity) || r.quantity < 1 || r.quantity > MAX_INVOICE_QTY);
+    if (unusable.length > 0) {
+      throw new UnprocessableEntityException(
+        `Some lines have a quantity that cannot be stored: ${unusable.slice(0, 3).map((r) => `"${r.rawDescription.slice(0, 40)}" (${r.quantity})`).join(', ')}. Quantities must be whole numbers from 1 to ${MAX_INVOICE_QTY.toLocaleString('en-US')}.`,
       );
     }
 
@@ -176,7 +197,8 @@ export class SupplierInvoicesService {
       await this.productImages.enqueueLookup(productId);
     }
 
-    return this.get(invoice.id);
+    // `warnings` (lines that were skipped and why, OCR notices) are returned with the upload so the review screen can show them.
+    return { ...(await this.get(invoice.id)), warnings: parsed.warnings };
   }
 
   async updateItem(invoiceId: string, itemId: string, patch: { productId?: string | null; receivedQty?: number }) {
@@ -269,11 +291,13 @@ export class SupplierInvoicesService {
         }
       }
 
-      return this.get(id);
+      return { code: invoice.code, supplierName: invoice.supplierName };
     });
 
     await this.activity.log(`Stock receipt confirmed for ${result.code} (${result.supplierName})`, 'inventory', user.userId);
-    return result;
+    // Read AFTER the transaction has committed: reading inside it (through the shared client) returned the pre-commit
+    // state, so the response used to say UNDER_REVIEW for an invoice that had just been confirmed.
+    return this.get(id);
   }
 
   async cancel(id: string, user: AuthUser) {

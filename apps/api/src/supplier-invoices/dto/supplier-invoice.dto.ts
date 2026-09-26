@@ -1,4 +1,5 @@
-import { IsDateString, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { MAX_INVOICE_QTY } from '../parsers/quantity';
 
 export class UploadSupplierInvoiceDto {
   @IsString()
@@ -22,5 +23,6 @@ export class UpdateSupplierInvoiceItemDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(MAX_INVOICE_QTY)
   receivedQty?: number;
 }

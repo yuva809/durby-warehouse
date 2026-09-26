@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, XCircle } from 'lucide-react'
 import { Card, CardHeader } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
@@ -22,6 +22,8 @@ const STATUS_STYLE: Record<SupplierInvoiceStatus, string> = {
 export default function StockIntakeDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // Set by the upload screen: skipped lines and OCR notices from parsing this file (not stored, so only shown right after upload).
+  const uploadWarnings = ((useLocation().state as { warnings?: string[] } | null)?.warnings ?? []).filter(Boolean)
   const { data: invoice, isLoading } = useSupplierInvoice(id ?? null)
   const { data: products = [] } = useProducts()
   const updateItem = useUpdateSupplierInvoiceItem()
@@ -61,6 +63,12 @@ export default function StockIntakeDetail() {
     } catch (e) {
       setError((e as Error).message)
     }
+  }
+
+  /** Every edit goes through here so a rejected value (e.g. an impossible quantity) is SHOWN, never swallowed. */
+  function saveItem(itemId: string, patch: { productId?: string | null; receivedQty?: number }) {
+    setError(null)
+    updateItem.mutate({ invoiceId: invoice!.id, itemId, patch }, { onError: (e) => setError((e as Error).message) })
   }
 
   async function handleCancel() {
@@ -106,6 +114,18 @@ export default function StockIntakeDetail() {
         </div>
       </div>
 
+      {uploadWarnings.length > 0 && editable && (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800" data-testid="upload-warnings">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle size={16} className="shrink-0" /> Please check this against the original invoice
+          </div>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-6 text-xs">
+            {uploadWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {invoice.status === 'CONFIRMED' && (
         <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           <CheckCircle2 size={16} className="shrink-0" />
@@ -167,7 +187,7 @@ export default function StockIntakeDetail() {
                     {editable ? (
                       <select
                         value={item.productId ?? ''}
-                        onChange={(e) => updateItem.mutate({ invoiceId: invoice.id, itemId: item.id, patch: { productId: e.target.value || null } })}
+                        onChange={(e) => saveItem(item.id, { productId: e.target.value || null })}
                         className="rounded-lg bg-ink-50 px-2 py-1.5 text-xs outline-none ring-1 ring-inset ring-ink-200 focus:ring-brand-400"
                       >
                         <option value="">— Select Product —</option>
@@ -186,7 +206,7 @@ export default function StockIntakeDetail() {
                         type="number"
                         min={0}
                         value={item.receivedQty ?? ''}
-                        onChange={(e) => updateItem.mutate({ invoiceId: invoice.id, itemId: item.id, patch: { receivedQty: Math.max(0, Number(e.target.value)) } })}
+                        onChange={(e) => saveItem(item.id, { receivedQty: Math.max(0, Number(e.target.value)) })}
                         className="w-20 rounded-lg bg-ink-50 px-2 py-1.5 text-right text-sm font-semibold tabular-nums outline-none ring-1 ring-inset ring-ink-200 focus:ring-brand-400"
                       />
                     ) : (
@@ -197,7 +217,20 @@ export default function StockIntakeDetail() {
                     {!item.productId ? (
                       <Badge className="bg-rose-50 text-rose-600 ring-rose-600/20">⚠ Needs Review</Badge>
                     ) : item.needsReview ? (
-                      <Badge className="bg-amber-50 text-amber-700 ring-amber-600/20">Fuzzy match — verify</Badge>
+                      <div className="flex flex-col items-start gap-1.5">
+                        <Badge className="bg-amber-50 text-amber-700 ring-amber-600/20">
+                          {item.matchConfidence === 'fuzzy' ? 'Fuzzy match — verify' : 'Check against invoice'}
+                        </Badge>
+                        {editable && (
+                          // Approves the CURRENT match as it is. (Re-picking the same product in the dropdown fires no change, so a correct match could not be approved before.)
+                          <button
+                            onClick={() => saveItem(item.id, { productId: item.productId })}
+                            className="text-xs font-medium text-brand-600 hover:text-brand-700 cursor-pointer"
+                          >
+                            Looks right
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-600/20">Matched</Badge>
                     )}
@@ -218,7 +251,7 @@ export default function StockIntakeDetail() {
           )}
           {!canConfirm && (
             <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              <AlertTriangle size={14} className="shrink-0" /> Every line needs a confirmed product match (resolve any "Needs Review" rows via the dropdown) and a received quantity before you can confirm.
+              <AlertTriangle size={14} className="shrink-0" /> Every line needs a confirmed product match (pick a product for any "Needs Review" row, and press "Looks right" on rows you have checked) and a received quantity before you can confirm.
             </div>
           )}
           <Button size="lg" disabled={!canConfirm || confirm.isPending} onClick={handleConfirm}>

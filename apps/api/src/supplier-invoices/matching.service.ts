@@ -24,11 +24,12 @@ export class ImportMatchingService {
   constructor(private prisma: PrismaService) {}
 
   async matchProduct(rawDescription: string, rawCode: string | undefined): Promise<MatchResult> {
-    const products = await this.prisma.product.findMany({ where: { active: true }, select: { id: true, sku: true, name: true } });
+    const products = await this.prisma.product.findMany({ where: { active: true }, select: { id: true, sku: true, barcode: true, name: true } });
 
     if (rawCode) {
       const codeNorm = rawCode.trim().toLowerCase();
-      const exact = products.find((p) => p.sku.toLowerCase() === codeNorm);
+      // The code on an invoice line is either the supplier's SKU or the product's barcode (EAN).
+      const exact = products.find((p) => p.sku.toLowerCase() === codeNorm || (p.barcode ?? '').toLowerCase() === codeNorm);
       if (exact) return { productId: exact.id, confidence: 'exact' };
     }
 

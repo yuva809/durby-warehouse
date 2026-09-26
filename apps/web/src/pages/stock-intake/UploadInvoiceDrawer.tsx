@@ -32,7 +32,7 @@ export function UploadInvoiceDrawer({ open, onClose }: { open: boolean; onClose:
     const invoice = await upload.mutateAsync({ file, supplierName: supplierName.trim(), invoiceNumber: invoiceNumber.trim(), invoiceDate: invoiceDate || undefined })
     reset()
     onClose()
-    navigate(`/stock-intake/${invoice.id}`)
+    navigate(`/stock-intake/${invoice.id}`, { state: { warnings: invoice.warnings } })
   }
 
   const canSubmit = !!file && supplierName.trim().length > 0 && invoiceNumber.trim().length > 0

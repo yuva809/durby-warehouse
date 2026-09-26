@@ -80,7 +80,8 @@ export class PdfInvoiceParser implements SupplierInvoiceParser {
       );
     }
 
-    const { header, rows } = parseInvoiceTextLines(text);
+    const { header, rows, issues } = parseInvoiceTextLines(text);
+    warnings.push(...issues);
     if (rows.length === 0) {
       warnings.push('No product rows could be detected automatically — this PDF may use an unsupported layout. Add items manually on the review screen.');
     }

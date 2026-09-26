@@ -1,4 +1,5 @@
-import { IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { MAX_QUANTITY } from '../../common/limits';
 
 export enum AdjustmentReason {
   DAMAGE = 'DAMAGE',
@@ -17,6 +18,8 @@ export class CreateAdjustmentDto {
 
   /** Signed delta to apply to onHand (negative for damage/loss, positive for a found-stock recount). */
   @IsInt()
+  @Min(-MAX_QUANTITY)
+  @Max(MAX_QUANTITY)
   quantity!: number;
 
   @IsEnum(AdjustmentReason)

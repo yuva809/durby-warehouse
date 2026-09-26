@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Role } from '@prisma/client';
 import type { Response } from 'express';
@@ -42,7 +42,7 @@ export class SupplierInvoicesController {
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
   upload(@UploadedFile() file: Express.Multer.File, @Body() dto: UploadSupplierInvoiceDto, @CurrentUser() user: AuthUser) {
-    if (!file) throw new Error('No file uploaded');
+    if (!file) throw new BadRequestException('Choose a file to upload (PDF, CSV, XLSX or XLSM).');
     return this.invoices.upload({ buffer: file.buffer, originalname: file.originalname, mimetype: file.mimetype }, dto, user);
   }
 

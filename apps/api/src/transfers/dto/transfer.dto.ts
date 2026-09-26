@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsDateString, IsInt, IsOptional, IsString, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsDateString, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { MAX_QUANTITY } from '../../common/limits';
 
 export class AssignDriverDto {
   @IsString()
@@ -12,6 +13,7 @@ export class SetPickedQtyDto {
 
   @IsInt()
   @Min(0)
+  @Max(MAX_QUANTITY)
   pickedQty!: number;
 
   /** Required by the service layer when pickedQty < approvedQty (damaged, rotten, short, etc). */
@@ -26,6 +28,7 @@ export class DeliveredItemDto {
 
   @IsInt()
   @Min(0)
+  @Max(MAX_QUANTITY)
   deliveredQty!: number;
 }
 

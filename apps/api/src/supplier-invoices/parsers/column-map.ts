@@ -1,4 +1,6 @@
+import { UnprocessableEntityException } from '@nestjs/common';
 import type { ParsedInvoiceRow } from './types';
+import { checkQuantity } from './quantity';
 
 // Accepted header spellings per logical column, lowercase/trimmed. Covers
 // the common variants real supplier exports use without hardcoding to any
@@ -34,7 +36,7 @@ export function detectColumns(headers: string[]): ColumnMapping {
   const qty = find(SYNONYMS.qty);
   if (!description || !qty) {
     const missing = [!description && 'a product/description column', !qty && 'a quantity column'].filter(Boolean).join(' and ');
-    throw new Error(
+    throw new UnprocessableEntityException(
       `Could not find ${missing} in the uploaded file. Found columns: ${headers.join(', ') || '(none)'}. ` +
         `Expected something like "Description"/"Product" and "Qty"/"Quantity".`,
     );
@@ -51,7 +53,9 @@ export function rowFromRecord(record: Record<string, unknown>, cols: ColumnMappi
   if (!Number.isFinite(qty) || qty <= 0) {
     return { row: null, issue: `Row "${description}": invalid or non-positive quantity ("${qtyRaw}") — skipped` };
   }
+  const checked = checkQuantity(qty);
+  if (!checked.ok) return { row: null, issue: `Row "${description}": ${checked.reason} ("${qtyRaw}"): skipped` };
   const code = cols.code ? String(record[cols.code] ?? '').trim() || undefined : undefined;
   const unit = cols.unit ? String(record[cols.unit] ?? '').trim() || undefined : undefined;
-  return { row: { rawDescription: description, rawProductCode: code, unit, quantity: Math.round(qty) } };
+  return { row: { rawDescription: description, rawProductCode: code, unit, quantity: checked.value } };
 }

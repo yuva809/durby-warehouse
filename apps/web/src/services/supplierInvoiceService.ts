@@ -10,13 +10,14 @@ export const supplierInvoiceService = {
     return api.get<SupplierInvoice>(`/supplier-invoices/${id}`)
   },
 
-  upload(input: { file: File; supplierName: string; invoiceNumber: string; invoiceDate?: string }): Promise<SupplierInvoice> {
+  /** `warnings`: lines that were skipped (and why) and any OCR notices. Only present on this response, so the caller passes them on to the review screen. */
+  upload(input: { file: File; supplierName: string; invoiceNumber: string; invoiceDate?: string }): Promise<SupplierInvoice & { warnings: string[] }> {
     const form = new FormData()
     form.append('file', input.file)
     form.append('supplierName', input.supplierName)
     form.append('invoiceNumber', input.invoiceNumber)
     if (input.invoiceDate) form.append('invoiceDate', input.invoiceDate)
-    return api.postForm<SupplierInvoice>('/supplier-invoices/upload', form)
+    return api.postForm<SupplierInvoice & { warnings: string[] }>('/supplier-invoices/upload', form)
   },
 
   updateItem(invoiceId: string, itemId: string, patch: { productId?: string | null; receivedQty?: number }) {

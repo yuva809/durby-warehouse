@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsInt, IsPositive, IsString, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsInt, IsPositive, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { MAX_QUANTITY } from '../../common/limits';
 
 export class RequestItemDto {
   @IsString()
@@ -7,6 +8,7 @@ export class RequestItemDto {
 
   @IsInt()
   @IsPositive()
+  @Max(MAX_QUANTITY)
   requestedQty!: number;
 }
 
@@ -23,6 +25,8 @@ export class UpdateApprovedQtyDto {
   productId!: string;
 
   @IsInt()
+  @Min(0)
+  @Max(MAX_QUANTITY)
   approvedQty!: number;
 }
 
